@@ -1,17 +1,15 @@
 import { graph } from '$lib/stores/graph.svelte';
-import type { ArchNode } from '$lib/registry/types';
-import type { Edge } from '@xyflow/svelte';
+import { CURRENT_VERSION, migrate, type AnySnapshot, type Snapshot } from './migrate';
 
 const KEY = 'ark-ground:diagram:v1';
 
-export type Snapshot = {
-	v: 1;
-	nodes: ArchNode[];
-	edges: Edge[];
-};
-
 export function serialize(): Snapshot {
-	return { v: 1, nodes: graph.nodes, edges: graph.edges };
+	return { version: CURRENT_VERSION, nodes: graph.nodes, edges: graph.edges };
+}
+
+function loadRaw(raw: AnySnapshot) {
+	const snap = migrate(raw);
+	graph.load({ nodes: snap.nodes, edges: snap.edges });
 }
 
 export function download() {
@@ -25,19 +23,18 @@ export function download() {
 }
 
 export async function importFile(file: File) {
-	const snap = JSON.parse(await file.text()) as Snapshot;
-	graph.load({ nodes: snap.nodes, edges: snap.edges });
+	loadRaw(JSON.parse(await file.text()) as AnySnapshot);
 }
 
 /**
- * Loads any saved diagram, then wires a debounced autosave to localStorage.
- * Returns a cleanup function. Call once on client mount.
+ * Loads any saved diagram (migrating if needed), then wires a debounced
+ * autosave to localStorage. Returns a cleanup function. Call once on mount.
  */
 export function startAutosave(): () => void {
 	const saved = localStorage.getItem(KEY);
 	if (saved) {
 		try {
-			graph.load(JSON.parse(saved) as Snapshot);
+			loadRaw(JSON.parse(saved) as AnySnapshot);
 		} catch {
 			localStorage.removeItem(KEY);
 		}
