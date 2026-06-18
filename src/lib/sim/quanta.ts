@@ -5,27 +5,41 @@ import type { ArchNode } from '$lib/registry/types';
 export type Quantum = { id: string; nodeIds: string[] };
 
 /**
+ * Kinds that route traffic without statically coupling what they connect. They
+ * are edge infrastructure, not part of any quantum, and crucially they do NOT
+ * bridge the things on either side: a load generator and an API gateway each
+ * just forward requests, so the services behind them stay independently
+ * deployable. Removing them from the graph is what lets sibling services fan out
+ * into separate quanta instead of collapsing into one.
+ */
+const TRANSPARENT = new Set<ArchNode['data']['kind']>(['load', 'api-gateway']);
+
+/**
  * Autodetect architecture quanta from the diagram topology.
  *
- * A quantum is a connected component of the architecture graph, treating edges
- * as undirected — every edge here is a synchronous coupling, so a shared
- * gateway/DB ties everything into one quantum and disconnected subgraphs are
- * separate quanta.
+ * A quantum is an independently deployable unit, bounded by *static coupling*:
+ * two nodes share a quantum only when they are wired together by something that
+ * actually binds their lifecycles — a shared database, a synchronous service-to-
+ * service call, or a load balancer in front of a pool. We model this as the
+ * connected components of the graph with traffic-routing infrastructure removed.
  *
  * Rules:
- * - `load` nodes (traffic generators) are not part of the architecture: they
- *   and their edges are excluded.
+ * - Traffic-routing nodes (`load`, `api-gateway`) are transparent: they and
+ *   their edges are dropped, so they never tie their neighbours together. Two
+ *   services behind one gateway, each with its own database, are two quanta.
+ * - Static coupling still bridges: services sharing a database (or one calling
+ *   another) land in the same quantum.
  * - Pool replicas live inside their pool; edges connect the pool, not the
  *   children, so children are skipped (the pool's box already encloses them).
- * - Only components containing at least one `service` or `pool` get a box;
- *   infra-only components (a lone database or gateway) are ignored.
+ * - Only components containing at least one `service`, `pool`, or `monolith`
+ *   get a box; infra-only components (e.g. a lone database) are ignored.
  */
 export function detectQuanta(nodes: ArchNode[], edges: Edge[]): Quantum[] {
 	const poolIds = new Set(nodes.filter((n) => n.data.kind === 'pool').map((n) => n.id));
 	const isChild = (n: ArchNode) => !!n.parentId && poolIds.has(n.parentId);
 
-	// Logical nodes: drop traffic generators and pool replicas.
-	const logical = nodes.filter((n) => n.data.kind !== 'load' && !isChild(n));
+	// Logical nodes: drop transparent routing infra and pool replicas.
+	const logical = nodes.filter((n) => !TRANSPARENT.has(n.data.kind) && !isChild(n));
 	const kindById = new Map(logical.map((n) => [n.id, n.data.kind]));
 
 	// Undirected adjacency over edges whose endpoints are both logical nodes.

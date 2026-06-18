@@ -74,9 +74,39 @@ describe('detectQuanta', () => {
 
 	it('ignores infra-only components with no service or pool', () => {
 		const nodes = [gateway('gw'), database('d'), service('s')];
-		// gw+d are connected to each other but carry no service; s is its own quantum.
+		// The gateway is transparent and the lone db carries no service; only s
+		// forms a quantum.
 		const edges = [edge('gw', 'd')];
 		expect(members(nodes, edges)).toEqual([['s']]);
+	});
+
+	it('splits services behind a shared gateway into separate quanta', () => {
+		// Gateway fans out to two services, each with its own private database.
+		// The shared gateway is routing infra, not static coupling: two quanta.
+		const nodes = [
+			gateway('gw'),
+			service('post'),
+			database('post-db'),
+			service('users'),
+			database('users-db')
+		];
+		const edges = [
+			edge('gw', 'post'),
+			edge('gw', 'users'),
+			edge('post', 'post-db'),
+			edge('users', 'users-db')
+		];
+		expect(members(nodes, edges)).toEqual([
+			['post', 'post-db'],
+			['users', 'users-db']
+		]);
+	});
+
+	it('keeps services sharing a database in one quantum even behind a gateway', () => {
+		// A shared db statically couples the two services into one quantum.
+		const nodes = [gateway('gw'), service('s1'), service('s2'), database('shared')];
+		const edges = [edge('gw', 's1'), edge('gw', 's2'), edge('s1', 'shared'), edge('s2', 'shared')];
+		expect(members(nodes, edges)).toEqual([['s1', 's2', 'shared']]);
 	});
 
 	it('treats a standalone service as its own quantum', () => {
