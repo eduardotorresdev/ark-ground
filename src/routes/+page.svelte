@@ -6,8 +6,16 @@
 	import Inspector from '$lib/panels/Inspector.svelte';
 	import Editor from '$lib/canvas/Editor.svelte';
 	import { startAutosave } from '$lib/persistence/storage.svelte';
+	import { sim } from '$lib/stores/sim.svelte';
 
-	onMount(() => startAutosave());
+	onMount(() => {
+		const stopSave = startAutosave();
+		const stopSim = sim.start();
+		return () => {
+			stopSave();
+			stopSim();
+		};
+	});
 </script>
 
 <svelte:head>

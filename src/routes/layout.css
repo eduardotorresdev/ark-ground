@@ -107,3 +107,10 @@
 		color: var(--foreground);
 	}
 }
+
+/* Flowing-traffic animation for load-aware edges (see LoadEdge.svelte). */
+@keyframes ark-dash {
+	to {
+		stroke-dashoffset: -12;
+	}
+}
