@@ -45,12 +45,15 @@
 	function onKeydown(event: KeyboardEvent) {
 		if (isEditing(event.target)) return;
 
-		// ⌘/Ctrl + D → duplicate the selected service.
+		// ⌘/Ctrl + D → duplicate the selected service or monolith (creates a pool).
 		if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'd') {
 			const node = ui.selectedNode;
-			if (node?.data.kind === 'service') {
+			if (node?.data.kind === 'service' || node?.data.kind === 'monolith') {
 				event.preventDefault();
-				const created = graph.duplicateService(node.id);
+				const created =
+					node.data.kind === 'service'
+						? graph.duplicateService(node.id)
+						: graph.duplicateMonolith(node.id);
 				if (created) ui.select(created);
 			}
 			return;

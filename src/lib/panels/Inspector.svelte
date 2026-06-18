@@ -259,6 +259,13 @@
 			<Button
 				variant="outline"
 				size="sm"
+				onclick={() => ui.select(graph.duplicateMonolith(node.id))}
+			>
+				<Copy size={16} /> Duplicar (criar pool)
+			</Button>
+			<Button
+				variant="outline"
+				size="sm"
 				disabled={node.data.modules.length < 2}
 				title={node.data.modules.length < 2 ? 'Adicione ao menos 2 módulos' : undefined}
 				onclick={() => ui.select(graph.monolithToMicroservices(node.id))}

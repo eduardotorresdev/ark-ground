@@ -103,23 +103,51 @@ class GraphStore {
 		const svc = this.nodes.find((n) => n.id === id);
 		if (!svc || svc.data.kind !== 'service') return null;
 		if (svc.parentId && this.#isPool(svc.parentId)) return this.addReplica(svc.parentId);
+		return this.#poolify(svc);
+	}
 
+	/**
+	 * Replicate a monolith. Mirrors {@link duplicateService}: a standalone
+	 * monolith becomes a 2-replica pool behind a load balancer (every replica is
+	 * an identical copy, modules included); one already in a pool gains a sibling.
+	 */
+	duplicateMonolith(id: string): string | null {
+		const mono = this.nodes.find((n) => n.id === id);
+		if (!mono || mono.data.kind !== 'monolith') return null;
+		if (mono.parentId && this.#isPool(mono.parentId)) return this.addReplica(mono.parentId);
+		return this.#poolify(mono);
+	}
+
+	/**
+	 * Wrap a standalone service/monolith into a 2-replica pool fronted by a new
+	 * load balancer. The original node becomes replica 0; a clone becomes replica
+	 * 1. Inbound edges are rewired to the LB, outbound edges leave the pool.
+	 */
+	#poolify(node: ArchNode): string {
+		const data = node.data;
+		if (data.kind !== 'service' && data.kind !== 'monolith') return node.id;
+		const kind = data.kind;
 		const poolId = this.#id('pool');
 		const lbId = this.#id('load-balancer');
-		const replicaId = this.#id('service');
+		const replicaId = this.#id(kind);
 		const { width, height } = poolSize(2);
 
 		const pool: ArchNode = {
 			id: poolId,
 			type: 'pool',
-			position: { ...svc.position },
+			position: { ...node.position },
 			width,
 			height,
 			style: sizeStyle(width, height),
-			data: { kind: 'pool', label: `${svc.data.label} (pool)`, capacity: svc.data.capacity, version: 1 }
+			data: {
+				kind: 'pool',
+				label: `${data.label} (pool)`,
+				capacity: data.capacity,
+				version: 1
+			}
 		};
 		const child0: ArchNode = {
-			...svc,
+			...node,
 			parentId: poolId,
 			extent: 'parent',
 			position: childPos(0),
@@ -129,29 +157,29 @@ class GraphStore {
 		};
 		const child1: ArchNode = {
 			id: replicaId,
-			type: 'service',
+			type: kind,
 			parentId: poolId,
 			extent: 'parent',
 			position: childPos(1),
 			width: CHILD_W,
 			style: `width: ${CHILD_W}px;`,
 			...CHILD_FLAGS,
-			data: { ...svc.data }
+			data: { ...node.data }
 		};
 		const lb: ArchNode = {
 			id: lbId,
 			type: 'load-balancer',
-			position: { x: svc.position.x - 210, y: svc.position.y },
+			position: { x: node.position.x - 210, y: node.position.y },
 			data: { kind: 'load-balancer', ...getDef('load-balancer').create() } as ArchData
 		};
 
-		const others = this.nodes.filter((n) => n.id !== id);
+		const others = this.nodes.filter((n) => n.id !== node.id);
 		this.nodes = [...others, lb, pool, child0, child1];
 
 		// Rewire: inbound edges now feed the LB, outbound edges leave the pool.
 		const rewired = this.edges.map((e) => {
-			if (e.target === id) return { ...e, target: lbId };
-			if (e.source === id) return { ...e, source: poolId };
+			if (e.target === node.id) return { ...e, target: lbId };
+			if (e.source === node.id) return { ...e, source: poolId };
 			return e;
 		});
 		this.edges = [
@@ -167,21 +195,22 @@ class GraphStore {
 		if (pool?.data.kind !== 'pool') return null;
 		const kids = this.#childrenOf(poolId);
 		const template = kids[0];
-		if (!template || template.data.kind !== 'service') return null;
+		const kind = template?.data.kind;
+		if (kind !== 'service' && kind !== 'monolith') return null;
 
-		const replicaId = this.#id('service');
+		const replicaId = this.#id(kind);
 		const count = kids.length + 1;
 		const { width, height } = poolSize(count);
 		const replica: ArchNode = {
 			id: replicaId,
-			type: 'service',
+			type: kind,
 			parentId: poolId,
 			extent: 'parent',
 			position: childPos(kids.length),
 			width: CHILD_W,
 			style: `width: ${CHILD_W}px;`,
 			...CHILD_FLAGS,
-			data: { ...template.data, capacity: pool.data.capacity }
+			data: { ...template!.data, capacity: pool.data.capacity }
 		};
 		this.nodes = [
 			...this.nodes.map((n) =>
@@ -197,7 +226,7 @@ class GraphStore {
 		this.nodes = this.nodes.map((n) => {
 			if (n.id === poolId && n.data.kind === 'pool')
 				return { ...n, data: { ...n.data, capacity } };
-			if (n.parentId === poolId && n.data.kind === 'service')
+			if (n.parentId === poolId && (n.data.kind === 'service' || n.data.kind === 'monolith'))
 				return { ...n, data: { ...n.data, capacity } };
 			return n;
 		});
@@ -328,12 +357,26 @@ class GraphStore {
 		return null;
 	}
 
-	/** Can these selected nodes collapse into a monolith? (2+ services, 1 gateway) */
+	/** Standalone services within a selection (ignores a co-selected gateway, etc.). */
+	#selectedServiceIds(ids: string[]): string[] {
+		return ids.filter((id) => {
+			const n = this.nodes.find((x) => x.id === id);
+			return !!n && n.data.kind === 'service' && !n.parentId;
+		});
+	}
+
+	/**
+	 * Can these selected nodes collapse into a monolith? Needs 2+ standalone
+	 * services sharing one gateway. The shared gateway may itself be in the
+	 * selection (Ctrl-clicking it must not break the merge).
+	 */
 	canMonolithize(ids: string[]): boolean {
-		if (ids.length < 2) return false;
-		const nodes = ids.map((id) => this.nodes.find((n) => n.id === id));
-		if (!nodes.every((n) => n && n.data.kind === 'service' && !n.parentId)) return false;
-		return this.commonGateway(ids) != null;
+		const svcIds = this.#selectedServiceIds(ids);
+		if (svcIds.length < 2) return false;
+		const gw = this.commonGateway(svcIds);
+		if (!gw) return false;
+		// Allow only the services and (optionally) their shared gateway in the selection.
+		return ids.every((id) => id === gw || svcIds.includes(id));
 	}
 
 	/**
@@ -409,8 +452,9 @@ class GraphStore {
 	 */
 	microservicesToMonolith(ids: string[]): string | null {
 		if (!this.canMonolithize(ids)) return null;
-		const services = ids.map((id) => this.nodes.find((n) => n.id === id)!);
-		const gwId = this.commonGateway(ids)!;
+		const svcIds = this.#selectedServiceIds(ids);
+		const services = svcIds.map((id) => this.nodes.find((n) => n.id === id)!);
+		const gwId = this.commonGateway(svcIds)!;
 		const gw = this.nodes.find((n) => n.id === gwId)!;
 
 		// Private databases of the selected services.
@@ -436,12 +480,12 @@ class GraphStore {
 			}
 		};
 
-		const selSet = new Set(ids);
+		const selSet = new Set(svcIds);
 		const gwTargets = this.edges.filter((e) => e.source === gwId).map((e) => e.target);
 		const remaining = gwTargets.filter((t) => !selSet.has(t));
 		const removeGw = remaining.length === 0;
 
-		const dropNodes = new Set([...ids, ...dbList.slice(1), ...(removeGw ? [gwId] : [])]);
+		const dropNodes = new Set([...svcIds, ...dbList.slice(1), ...(removeGw ? [gwId] : [])]);
 		const keep = this.nodes.filter((n) => !dropNodes.has(n.id));
 
 		const newEdges: Edge[] = [];
@@ -502,7 +546,10 @@ class GraphStore {
 					style: `width: ${CHILD_W}px;`,
 					extent: 'parent' as const,
 					...CHILD_FLAGS,
-					data: n.data.kind === 'service' ? { ...n.data, capacity: cap } : n.data
+					data:
+						n.data.kind === 'service' || n.data.kind === 'monolith'
+							? { ...n.data, capacity: cap }
+							: n.data
 				};
 			});
 		}

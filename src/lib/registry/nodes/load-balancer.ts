@@ -10,7 +10,7 @@ export const loadBalancerDef: NodeDef<'load-balancer'> = {
 	accent: 'border-sky-300 bg-sky-50 text-sky-700',
 	ports: [
 		{ id: 'in', dir: 'in', accepts: ['load', 'api-gateway', 'service'] },
-		{ id: 'out', dir: 'out', accepts: ['pool'] }
+		{ id: 'out', dir: 'out', accepts: ['pool', 'service', 'monolith'] }
 	],
 	component: LoadBalancerNode,
 	create: () => ({ label: 'Load Balancer', algorithm: 'round-robin', capacity: 100000 })
