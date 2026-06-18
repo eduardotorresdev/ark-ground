@@ -1,42 +1,51 @@
-# sv
+# ark-ground
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+Um simulador de arquiteturas no navegador. Monte um sistema arrastando blocos
+para o canvas, ligue-os e veja a carga fluir em tempo real — sem backend, tudo
+roda client-side.
 
-## Creating a project
+🎮 **Jogue agora:** https://eduardotorresdev.github.io/ark-ground/
 
-If you're seeing this, you've probably already done this step. Congrats!
+## O que dá pra fazer
 
-```sh
-# create a new project
-npx sv create my-app
-```
+- Arraste componentes da paleta para o canvas e conecte-os.
+- Tipos de nó disponíveis: **load** (gerador de carga), **api-gateway**,
+  **load-balancer**, **service**, **pool** e **database**.
+- A simulação propaga _quanta_ de carga pelas conexões e mostra métricas
+  (vazão, fila, saturação) por nó, em tempo real.
+- As conexões respeitam regras de compatibilidade entre portas de entrada/saída.
+- O grafo é salvo automaticamente no `localStorage` e migrado entre versões de
+  schema, então você não perde o que montou.
 
-To recreate this project with the same configuration:
+## Stack
 
-```sh
-# recreate this project
-npx sv@0.16.1 create --template minimal --types ts --add prettier eslint playwright vitest="usages:unit,component" tailwindcss="plugins:none" sveltekit-adapter="adapter:static" --no-download-check --no-install ark-tmp
-```
+SvelteKit (SPA) + Svelte 5 (runes), `@xyflow/svelte` para o canvas, Tailwind v4.
+Build estático via `@sveltejs/adapter-static`.
 
-## Developing
-
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
-
-```sh
-npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
-```
-
-## Building
-
-To create a production version of your app:
+## Desenvolvimento
 
 ```sh
-npm run build
+bun install
+bun run dev
 ```
 
-You can preview the production build with `npm run preview`.
+Outros scripts úteis:
 
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+```sh
+bun run build      # build de produção em build/
+bun run preview    # serve o build localmente
+bun run test:unit  # testes unitários (vitest)
+bun run check      # type-check
+```
+
+## Deploy
+
+O deploy para o GitHub Pages é automático: cada push na branch `main` dispara o
+workflow [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml), que faz
+o build estático e publica o conteúdo de `build/` no Pages.
+
+Em produção a app é servida sob o caminho `/ark-ground`, configurado via
+`paths.base` no [`vite.config.ts`](vite.config.ts). O SPA usa `404.html` como
+fallback para o roteamento client-side.
+
+Para habilitar no seu fork: **Settings → Pages → Source: GitHub Actions**.
