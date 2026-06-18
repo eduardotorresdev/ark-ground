@@ -10,5 +10,5 @@ export const databaseDef: NodeDef<'database'> = {
 	accent: 'border-amber-300 bg-amber-50 text-amber-700',
 	ports: [{ id: 'conn', dir: 'in', label: 'conexões' }],
 	component: DatabaseNode,
-	create: () => ({ label: 'Database', engine: 'postgres', persistent: true })
+	create: () => ({ label: 'Database', engine: 'postgres', persistent: true, capacity: 1000 })
 };

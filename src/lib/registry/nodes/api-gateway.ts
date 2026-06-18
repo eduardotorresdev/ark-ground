@@ -10,8 +10,8 @@ export const gatewayDef: NodeDef<'api-gateway'> = {
 	accent: 'border-indigo-300 bg-indigo-50 text-indigo-700',
 	ports: [
 		{ id: 'in', dir: 'in' },
-		{ id: 'out', dir: 'out', accepts: ['service'] }
+		{ id: 'out', dir: 'out', accepts: ['service', 'load-balancer'] }
 	],
 	component: GatewayNode,
-	create: () => ({ label: 'API Gateway', routes: 0 })
+	create: () => ({ label: 'API Gateway', capacity: 5000 })
 };
