@@ -36,6 +36,12 @@ const pool = (id: string): ArchNode => ({
 	position: at,
 	data: { kind: 'pool', label: id, capacity: 500, version: 1 }
 });
+const gateway = (id: string, weights?: Record<string, number>): ArchNode => ({
+	id,
+	type: 'api-gateway',
+	position: at,
+	data: { kind: 'api-gateway', label: id, capacity: 100000, weights }
+});
 const edge = (source: string, target: string): Edge => ({
 	id: `${source}->${target}`,
 	source,
@@ -120,6 +126,33 @@ describe('load balancer split', () => {
 		const nodes = [pool('p'), service('r1', 400, 'p'), service('r2', 400, 'p')];
 		const { nodes: stat } = computeSim(nodes, []);
 		expect(stat.p.warn).toBe('no-lb');
+	});
+});
+
+describe('api gateway routing', () => {
+	it('splits load across targets proportionally to their weights', () => {
+		const nodes = [
+			load('g', 300),
+			gateway('gw', { post: 75, users: 25 }),
+			service('post', 5000),
+			service('users', 5000)
+		];
+		const edges = [edge('g', 'gw'), edge('gw', 'post'), edge('gw', 'users')];
+		const { nodes: stat, edges: estat } = computeSim(nodes, edges);
+
+		// 300 rps split 75/25 -> 225 / 75 (routed, not broadcast).
+		expect(stat.post.offered).toBe(225);
+		expect(stat.users.offered).toBe(75);
+		expect(estat['gw->post'].load).toBe(225);
+		expect(estat['gw->users'].load).toBe(75);
+	});
+
+	it('splits evenly when no weights are configured', () => {
+		const nodes = [load('g', 300), gateway('gw'), service('a', 5000), service('b', 5000)];
+		const edges = [edge('g', 'gw'), edge('gw', 'a'), edge('gw', 'b')];
+		const { nodes: stat } = computeSim(nodes, edges);
+		expect(stat.a.offered).toBe(150);
+		expect(stat.b.offered).toBe(150);
 	});
 });
 

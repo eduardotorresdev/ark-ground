@@ -42,6 +42,9 @@ export function bucket(util: number): Level {
 	return 'crit';
 }
 
+/** Default relative routing weight for a gateway target with no explicit weight. */
+export const DEFAULT_GATEWAY_WEIGHT = 50;
+
 export const LEVEL_STROKE: Record<Level, string> = {
 	idle: '#94a3b8', // slate-400
 	ok: '#22c55e', // green-500
@@ -95,16 +98,22 @@ export function computeSim(
 	const ledges = edges.filter((e) => logicalIds.has(e.source) && logicalIds.has(e.target));
 
 	const incoming = new Map<string, string[]>();
+	const inEdges = new Map<string, Edge[]>();
+	const outEdges = new Map<string, Edge[]>();
 	const succ = new Map<string, string[]>();
 	const indeg = new Map<string, number>();
 	for (const n of logical) {
 		succ.set(n.id, []);
 		indeg.set(n.id, 0);
+		inEdges.set(n.id, []);
+		outEdges.set(n.id, []);
 	}
 	for (const e of ledges) {
 		succ.get(e.source)!.push(e.target);
 		indeg.set(e.target, (indeg.get(e.target) ?? 0) + 1);
 		incoming.set(e.target, [...(incoming.get(e.target) ?? []), e.source]);
+		inEdges.get(e.target)!.push(e);
+		outEdges.get(e.source)!.push(e);
 	}
 
 	// Kahn topological order; leftovers are on cycles.
@@ -124,7 +133,26 @@ export function computeSim(
 	for (const id of cyclic) order.push(id);
 
 	const served = new Map<string, number>();
+	const flow = new Map<string, number>(); // edgeId -> req/s carried by that edge
 	const stat: Record<string, NodeStat> = {};
+
+	const offeredOf = (id: string) =>
+		(inEdges.get(id) ?? []).reduce((s, e) => s + (flow.get(e.id) ?? 0), 0);
+
+	// Push a node's served output onto its out-edges. Every node *broadcasts* its
+	// full output to each dependency, except an API gateway, which *routes*: it
+	// splits its output across targets proportionally to their relative weights.
+	const emit = (n: ArchNode, sv: number) => {
+		const outs = outEdges.get(n.id) ?? [];
+		if (n.data.kind === 'api-gateway') {
+			const w = n.data.weights ?? {};
+			const weightOf = (e: Edge) => Math.max(0, w[e.target] ?? DEFAULT_GATEWAY_WEIGHT);
+			const total = outs.reduce((s, e) => s + weightOf(e), 0);
+			for (const e of outs) flow.set(e.id, total > 0 ? sv * (weightOf(e) / total) : 0);
+		} else {
+			for (const e of outs) flow.set(e.id, sv);
+		}
+	};
 
 	for (const id of order) {
 		const n = byId.get(id)!;
@@ -134,6 +162,7 @@ export function computeSim(
 		if (kind === 'load') {
 			const out = n.data.rps;
 			served.set(id, out);
+			emit(n, out);
 			stat[id] = {
 				offered: out,
 				served: out,
@@ -146,7 +175,7 @@ export function computeSim(
 			continue;
 		}
 
-		const offered = (incoming.get(id) ?? []).reduce((s, src) => s + (served.get(src) ?? 0), 0);
+		const offered = offeredOf(id);
 
 		if (kind === 'pool') {
 			const kids = childrenOf.get(id) ?? [];
@@ -179,6 +208,7 @@ export function computeSim(
 				};
 			}
 			served.set(id, poolServed);
+			emit(n, poolServed);
 			const util = totalCap > 0 ? offered / totalCap : 0;
 			stat[id] = {
 				offered,
@@ -199,6 +229,7 @@ export function computeSim(
 		const limit = cap ?? Infinity;
 		const sv = Math.min(offered, limit);
 		served.set(id, sv);
+		emit(n, sv);
 		stat[id] = {
 			offered,
 			served: sv,
@@ -217,7 +248,7 @@ export function computeSim(
 
 	const edgeStats: Record<string, EdgeStat> = {};
 	for (const e of edges) {
-		const load = served.get(e.source) ?? 0;
+		const load = flow.get(e.id) ?? served.get(e.source) ?? 0;
 		const target = stat[e.target];
 		edgeStats[e.id] = { load, level: target ? target.level : load > 0 ? 'ok' : 'idle' };
 	}

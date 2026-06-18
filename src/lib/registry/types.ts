@@ -59,6 +59,13 @@ export type GatewayData = {
 	kind: 'api-gateway';
 	label: string;
 	capacity: number;
+	/**
+	 * Relative routing weight per downstream target node id. The gateway splits
+	 * its served load across targets proportionally to these weights (a target
+	 * with no entry uses the default weight). Lets you model "posts get more
+	 * traffic than users" instead of broadcasting the full load to each.
+	 */
+	weights?: Record<string, number>;
 };
 
 /** Traffic generator. Injects a constant req/s into whatever it is wired to. */

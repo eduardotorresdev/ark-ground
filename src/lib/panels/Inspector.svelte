@@ -14,9 +14,32 @@
 	import { deploy } from '$lib/stores/deploy.svelte';
 	import { sim } from '$lib/stores/sim.svelte';
 	import { getDef } from '$lib/registry';
+	import { DEFAULT_GATEWAY_WEIGHT } from '$lib/sim/engine';
 	import type { ArchData, DeployStrategy, LbAlgorithm } from '$lib/registry/types';
 
 	const node = $derived(ui.selectedNode);
+
+	// API gateway routing: each connected target gets a configurable share of the
+	// load. Weights are relative; the displayed % is the normalized proportion.
+	const gatewayTargets = $derived.by(() => {
+		if (node?.data.kind !== 'api-gateway') return [];
+		const weights = node.data.weights ?? {};
+		const targets = graph.edges
+			.filter((e) => e.source === node.id)
+			.map((e) => graph.nodes.find((n) => n.id === e.target))
+			.filter((n): n is NonNullable<typeof n> => !!n);
+		const total = targets.reduce((s, t) => s + (weights[t.id] ?? DEFAULT_GATEWAY_WEIGHT), 0);
+		return targets.map((t) => {
+			const weight = weights[t.id] ?? DEFAULT_GATEWAY_WEIGHT;
+			return { id: t.id, label: t.data.label, weight, pct: total > 0 ? Math.round((weight / total) * 100) : 0 };
+		});
+	});
+
+	function setWeight(targetId: string, value: number) {
+		if (node?.data.kind !== 'api-gateway') return;
+		const weights = { ...(node.data.weights ?? {}), [targetId]: Math.max(0, Math.round(value)) };
+		graph.updateData(node.id, { weights });
+	}
 	const def = $derived(node ? getDef(node.data.kind) : null);
 	const isReplica = $derived(!!node?.parentId);
 	const replicaCount = $derived(
@@ -175,6 +198,36 @@
 			</label>
 		{:else if node.data.kind === 'api-gateway'}
 			{@render scale('f-cap', 'Capacidade (req/s)', node.data.capacity, 'capacity', 20000, 100)}
+			<Separator />
+			<div class="flex flex-col gap-2">
+				<Label>Distribuição de carga</Label>
+				{#if gatewayTargets.length}
+					<p class="text-xs text-muted-foreground">
+						Proporção do tráfego roteada para cada destino conectado.
+					</p>
+					{#each gatewayTargets as t (t.id)}
+						<div class="flex flex-col gap-1">
+							<div class="flex items-center justify-between gap-2 text-xs">
+								<span class="truncate font-medium">{t.label}</span>
+								<span class="shrink-0 tabular-nums text-muted-foreground">{t.pct}%</span>
+							</div>
+							<input
+								type="range"
+								min="0"
+								max="100"
+								step="1"
+								value={t.weight}
+								class="w-full"
+								oninput={(e) => setWeight(t.id, num(e.currentTarget.value, 0))}
+							/>
+						</div>
+					{/each}
+				{:else}
+					<p class="text-xs text-muted-foreground">
+						Conecte o gateway a serviços para configurar a distribuição.
+					</p>
+				{/if}
+			</div>
 		{:else if node.data.kind === 'load'}
 			{@render scale('f-rps', 'Carga (req/s)', node.data.rps, 'rps', 5000, 50)}
 		{:else if node.data.kind === 'load-balancer'}
