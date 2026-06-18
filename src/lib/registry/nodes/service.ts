@@ -13,5 +13,5 @@ export const serviceDef: NodeDef<'service'> = {
 		{ id: 'out', dir: 'out' }
 	],
 	component: ServiceNode,
-	create: () => ({ label: 'Serviço', capacity: 500 })
+	create: () => ({ label: 'Serviço', capacity: 500, version: 1 })
 };

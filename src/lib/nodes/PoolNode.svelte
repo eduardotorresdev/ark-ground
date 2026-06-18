@@ -7,6 +7,7 @@
 	import { sim } from '$lib/stores/sim.svelte';
 	import { LEVEL_STROKE } from '$lib/sim/engine';
 	import Metric from './Metric.svelte';
+	import DeployBadge from './DeployBadge.svelte';
 
 	let { id, data, selected }: NodeProps = $props();
 	const d = $derived(data as PoolData);
@@ -40,6 +41,7 @@
 		</div>
 		<div class="text-xs text-muted-foreground">{count} réplica{count === 1 ? '' : 's'}</div>
 		<Metric {id} />
+		<DeployBadge {id} version={d.version} />
 	</header>
 
 	<Handle type="source" position={Position.Right} id="out" />

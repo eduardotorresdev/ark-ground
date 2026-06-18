@@ -6,10 +6,15 @@
 	import Copy from '@lucide/svelte/icons/copy';
 	import Plus from '@lucide/svelte/icons/plus';
 	import Minus from '@lucide/svelte/icons/minus';
+	import Rocket from '@lucide/svelte/icons/rocket';
+	import Split from '@lucide/svelte/icons/split';
+	import X from '@lucide/svelte/icons/x';
 	import { ui } from '$lib/stores/ui.svelte';
 	import { graph } from '$lib/stores/graph.svelte';
+	import { deploy } from '$lib/stores/deploy.svelte';
+	import { sim } from '$lib/stores/sim.svelte';
 	import { getDef } from '$lib/registry';
-	import type { ArchData, LbAlgorithm } from '$lib/registry/types';
+	import type { ArchData, DeployStrategy, LbAlgorithm } from '$lib/registry/types';
 
 	const node = $derived(ui.selectedNode);
 	const def = $derived(node ? getDef(node.data.kind) : null);
@@ -17,6 +22,28 @@
 	const replicaCount = $derived(
 		node?.data.kind === 'pool' ? graph.nodes.filter((n) => n.parentId === node.id).length : 0
 	);
+
+	// Which nodes can be deployed, and with which strategies.
+	const deployable = $derived(
+		!!node &&
+			!isReplica &&
+			(node.data.kind === 'service' || node.data.kind === 'monolith' || node.data.kind === 'pool')
+	);
+	const strategies = $derived<DeployStrategy[]>(
+		node?.data.kind === 'pool' ? ['recreate', 'blue-green', 'rolling'] : ['recreate', 'blue-green']
+	);
+	let strategy = $state<DeployStrategy>('recreate');
+	let durationSec = $state(3);
+	const version = $derived(
+		node && 'version' in node.data ? (node.data as { version: number }).version : 1
+	);
+	const deploying = $derived(!!node && deploy.isDeploying(node.id));
+	const deployPct = $derived(node ? Math.round(deploy.progress(node.id, sim.now) * 100) : 0);
+
+	function startDeploy() {
+		if (!node) return;
+		deploy.start(node.id, strategy, durationSec * 1000);
+	}
 
 	function num(value: string, fallback = 0): number {
 		const n = Number(value);
@@ -202,6 +229,80 @@
 				Capacidade total do pool = {(node.data.capacity * replicaCount).toLocaleString('pt-BR')} req/s
 				({replicaCount} × {node.data.capacity}). Toda réplica herda essa capacidade.
 			</p>
+		{:else if node.data.kind === 'monolith'}
+			{@render scale('f-cap', 'Capacidade (req/s)', node.data.capacity, 'capacity', 10000, 50)}
+			<div class="flex flex-col gap-1.5">
+				<Label>Módulos</Label>
+				{#each node.data.modules as m (m.id)}
+					<div class="flex items-center gap-1.5">
+						<Input
+							value={m.label}
+							class="flex-1"
+							oninput={(e) => graph.renameModule(node.id, m.id, e.currentTarget.value)}
+						/>
+						<Button
+							variant="outline"
+							size="icon"
+							class="size-8 shrink-0"
+							aria-label="Remover módulo"
+							onclick={() => graph.removeModule(node.id, m.id)}
+						>
+							<X size={16} />
+						</Button>
+					</div>
+				{/each}
+				<Button variant="outline" size="sm" onclick={() => graph.addModule(node.id)}>
+					<Plus size={16} /> Módulo
+				</Button>
+			</div>
+			<Separator />
+			<Button
+				variant="outline"
+				size="sm"
+				disabled={node.data.modules.length < 2}
+				title={node.data.modules.length < 2 ? 'Adicione ao menos 2 módulos' : undefined}
+				onclick={() => ui.select(graph.monolithToMicroservices(node.id))}
+			>
+				<Split size={16} /> Converter em microsserviços
+			</Button>
+		{/if}
+
+		{#if deployable && node}
+			<Separator />
+			<div class="flex flex-col gap-1.5">
+				<Label>Deploy · versão atual v{version}</Label>
+				{#if deploying}
+					<div class="rounded-md bg-sky-50 px-2 py-1.5 text-xs text-sky-700">
+						deploy {deploy.runs[node.id]?.strategy} em andamento · {deployPct}%
+						<div class="mt-1 h-1.5 w-full overflow-hidden rounded bg-sky-200">
+							<div class="h-full bg-sky-500" style:width="{deployPct}%"></div>
+						</div>
+					</div>
+				{:else}
+					<select
+						class="h-9 rounded-md border bg-background px-2 text-sm"
+						bind:value={strategy}
+					>
+						{#each strategies as s (s)}
+							<option value={s}>{s}</option>
+						{/each}
+					</select>
+					<div class="flex items-center gap-2">
+						<input
+							type="range"
+							min="1"
+							max="10"
+							step="1"
+							bind:value={durationSec}
+							class="flex-1"
+						/>
+						<span class="w-10 text-right text-xs tabular-nums text-muted-foreground">{durationSec}s</span>
+					</div>
+					<Button variant="default" size="sm" onclick={startDeploy}>
+						<Rocket size={16} /> Deploy v{version + 1}
+					</Button>
+				{/if}
+			</div>
 		{/if}
 
 		<Separator />

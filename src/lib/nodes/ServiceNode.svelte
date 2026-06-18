@@ -8,6 +8,7 @@
 	import { ui } from '$lib/stores/ui.svelte';
 	import { LEVEL_STROKE } from '$lib/sim/engine';
 	import Metric from './Metric.svelte';
+	import DeployBadge from './DeployBadge.svelte';
 
 	let { id, data, selected }: NodeProps = $props();
 	const d = $derived(data as ServiceData);
@@ -60,6 +61,7 @@
 	</div>
 	<Metric {id} />
 	{#if !isReplica}
+		<DeployBadge {id} version={d.version} />
 		<Handle type="source" position={Position.Right} id="out" />
 	{/if}
 </div>

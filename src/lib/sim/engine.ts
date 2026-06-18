@@ -53,6 +53,7 @@ function capacityOf(n: ArchNode): number | null {
 	const d = n.data;
 	if (d.kind === 'service' || d.kind === 'database' || d.kind === 'api-gateway') return d.capacity;
 	if (d.kind === 'load-balancer') return d.capacity;
+	if (d.kind === 'monolith') return d.capacity;
 	return null;
 }
 
@@ -66,8 +67,15 @@ function capacityOf(n: ArchNode): number | null {
  *  - A pool splits its incoming load across replicas using the feeding LB's
  *    algorithm (round-robin = even; weighted/least-connections = by capacity).
  *  - Cycles are detected, their back-edges ignored, and the nodes flagged.
+ *
+ * `capMult` scales a node's effective capacity (default 1). Deploys drive it:
+ * recreate = 0 (full downtime), rolling = (R-1)/R, blue-green = 1.
  */
-export function computeSim(nodes: ArchNode[], edges: Edge[]): SimResult {
+export function computeSim(
+	nodes: ArchNode[],
+	edges: Edge[],
+	capMult: Record<string, number> = {}
+): SimResult {
 	const byId = new Map(nodes.map((n) => [n.id, n]));
 	const poolIds = new Set(nodes.filter((n) => n.data.kind === 'pool').map((n) => n.id));
 	const isChild = (n: ArchNode) => !!n.parentId && poolIds.has(n.parentId);
@@ -142,7 +150,9 @@ export function computeSim(nodes: ArchNode[], edges: Edge[]): SimResult {
 
 		if (kind === 'pool') {
 			const kids = childrenOf.get(id) ?? [];
-			const totalCap = kids.reduce((s, c) => s + capOrZero(c), 0);
+			const pm = capMult[id] ?? 1;
+			const childCap = (c: ArchNode) => capOrZero(c) * pm;
+			const totalCap = kids.reduce((s, c) => s + childCap(c), 0);
 			const lb = (incoming.get(id) ?? [])
 				.map((s) => byId.get(s))
 				.find((x) => x?.data.kind === 'load-balancer');
@@ -156,7 +166,7 @@ export function computeSim(nodes: ArchNode[], edges: Edge[]): SimResult {
 						? offered / kids.length
 						: 0
 					: offered * (capOrZero(c) / totalCap);
-				const cc = capOrZero(c);
+				const cc = childCap(c);
 				const sv = Math.min(share, cc);
 				poolServed += sv;
 				stat[c.id] = {
@@ -183,8 +193,9 @@ export function computeSim(nodes: ArchNode[], edges: Edge[]): SimResult {
 			continue;
 		}
 
-		// service / database / api-gateway / load-balancer
-		const cap = capacityOf(n);
+		// service / database / api-gateway / load-balancer / monolith
+		const baseCap = capacityOf(n);
+		const cap = baseCap == null ? null : baseCap * (capMult[id] ?? 1);
 		const limit = cap ?? Infinity;
 		const sv = Math.min(offered, limit);
 		served.set(id, sv);
@@ -192,9 +203,14 @@ export function computeSim(nodes: ArchNode[], edges: Edge[]): SimResult {
 			offered,
 			served: sv,
 			capacity: cap,
-			util: cap == null ? null : offered / cap,
+			util: cap == null ? null : cap > 0 ? offered / cap : offered > 0 ? Infinity : 0,
 			dropped: Math.max(0, offered - sv),
-			level: cap == null ? (offered > 0 ? 'ok' : 'idle') : bucket(offered / cap),
+			level:
+				cap == null
+					? offered > 0
+						? 'ok'
+						: 'idle'
+					: bucket(cap > 0 ? offered / cap : offered > 0 ? Infinity : 0),
 			cyclic: cyc
 		};
 	}

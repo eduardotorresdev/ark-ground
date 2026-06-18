@@ -1,4 +1,5 @@
 import { graph } from './graph.svelte';
+import { deploy } from './deploy.svelte';
 import { bucket, computeSim, type Level, type NodeStat, type SimResult } from '$lib/sim/engine';
 
 type Disp = { offered: number; served: number };
@@ -7,9 +8,15 @@ type Disp = { offered: number; served: number };
  * Always-on load simulation. `result` is the steady-state target, recomputed
  * reactively whenever the graph changes; `disp` holds per-node values that ramp
  * toward the target each animation frame, giving the continuous-time feel.
+ *
+ * Active deploys inject per-node capacity multipliers (`#capMult`), recomputed
+ * each frame, so downtime propagates downstream in real time.
  */
 class SimStore {
-	#result = $derived.by<SimResult>(() => computeSim(graph.nodes, graph.edges));
+	#capMult = $state.raw<Record<string, number>>({});
+	/** Reactive frame clock (performance.now) so deploy progress bars animate. */
+	now = $state(0);
+	#result = $derived.by<SimResult>(() => computeSim(graph.nodes, graph.edges, this.#capMult));
 	disp = $state<Record<string, Disp>>({});
 	#raf = 0;
 
@@ -44,6 +51,13 @@ class SimStore {
 
 	start(): () => void {
 		const tick = () => {
+			const nowMs = performance.now();
+			this.now = nowMs;
+			// Recompute deploy capacity multipliers; settle finished deploys.
+			const mult = deploy.multipliers();
+			if (!sameMult(mult, this.#capMult)) this.#capMult = mult;
+			deploy.settle(nowMs);
+
 			const targets = this.#result.nodes;
 			const next: Record<string, Disp> = {};
 			let changed = false;
@@ -63,6 +77,13 @@ class SimStore {
 		this.#raf = requestAnimationFrame(tick);
 		return () => cancelAnimationFrame(this.#raf);
 	}
+}
+
+/** Shallow equality for the capacity-multiplier map (avoids needless recompute). */
+function sameMult(a: Record<string, number>, b: Record<string, number>): boolean {
+	const ak = Object.keys(a);
+	if (ak.length !== Object.keys(b).length) return false;
+	return ak.every((k) => a[k] === b[k]);
 }
 
 /** Exponential approach toward the target; snaps when close enough. */

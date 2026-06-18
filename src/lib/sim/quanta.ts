@@ -56,9 +56,10 @@ export function detectQuanta(nodes: ArchNode[], edges: Edge[]): Quantum[] {
 			}
 		}
 
-		const hasService = component.some(
-			(id) => kindById.get(id) === 'service' || kindById.get(id) === 'pool'
-		);
+		const hasService = component.some((id) => {
+			const k = kindById.get(id);
+			return k === 'service' || k === 'pool' || k === 'monolith';
+		});
 		if (!hasService) continue;
 
 		// Stable id (smallest node id) so the box doesn't flicker across renders.

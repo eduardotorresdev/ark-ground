@@ -15,7 +15,7 @@ const service = (id: string, capacity: number, parentId?: string): ArchNode => (
 	id,
 	type: 'service',
 	position: at,
-	data: { kind: 'service', label: id, capacity },
+	data: { kind: 'service', label: id, capacity, version: 1 },
 	...(parentId ? { parentId, extent: 'parent' as const } : {})
 });
 const database = (id: string, capacity: number): ArchNode => ({
@@ -34,7 +34,7 @@ const pool = (id: string): ArchNode => ({
 	id,
 	type: 'pool',
 	position: at,
-	data: { kind: 'pool', label: id, capacity: 500 }
+	data: { kind: 'pool', label: id, capacity: 500, version: 1 }
 });
 const edge = (source: string, target: string): Edge => ({
 	id: `${source}->${target}`,

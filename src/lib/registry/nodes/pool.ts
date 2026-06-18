@@ -19,5 +19,5 @@ export const poolDef: NodeDef<'pool'> = {
 		{ id: 'out', dir: 'out' }
 	],
 	component: PoolNode,
-	create: () => ({ label: 'Pool', capacity: 500 })
+	create: () => ({ label: 'Pool', capacity: 500, version: 1 })
 };

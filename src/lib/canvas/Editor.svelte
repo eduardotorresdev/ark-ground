@@ -11,6 +11,7 @@
 	import { nodeTypes } from './nodeTypes';
 	import { edgeTypes } from './edgeTypes';
 	import QuantaOverlay from './QuantaOverlay.svelte';
+	import DeployHud from './DeployHud.svelte';
 	import { graph } from '$lib/stores/graph.svelte';
 	import { ui } from '$lib/stores/ui.svelte';
 	import { canConnect } from '$lib/registry';
@@ -73,11 +74,12 @@
 <svelte:window onkeydown={onKeydown} />
 
 <div
-	class="h-full w-full"
+	class="relative h-full w-full"
 	role="application"
 	ondragover={(e) => e.preventDefault()}
 	ondrop={onDrop}
 >
+	<DeployHud />
 	<SvelteFlow
 		bind:nodes={graph.nodes}
 		bind:edges={graph.edges}
@@ -88,7 +90,7 @@
 		fitView
 		isValidConnection={isValid}
 		onconnect={(c) => graph.connect(c)}
-		onnodeclick={({ node }) => ui.select(node.id)}
+		onselectionchange={({ nodes }) => ui.setSelection(nodes.map((n) => n.id))}
 		onedgeclick={({ edge }) => ui.selectEdge(edge.id)}
 		onpaneclick={() => ui.clear()}
 	>

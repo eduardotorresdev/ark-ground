@@ -2,7 +2,20 @@ import type { Component } from 'svelte';
 import type { Node, NodeProps } from '@xyflow/svelte';
 
 /** Every architecture component kind. Add new kinds here. */
-export type NodeKind = 'service' | 'database' | 'api-gateway' | 'load' | 'load-balancer' | 'pool';
+export type NodeKind =
+	| 'service'
+	| 'database'
+	| 'api-gateway'
+	| 'load'
+	| 'load-balancer'
+	| 'pool'
+	| 'monolith';
+
+/** Deploy strategies, in order of increasing safety. */
+export type DeployStrategy = 'recreate' | 'blue-green' | 'rolling';
+
+/** A logical module living inside a monolith (illustrative; not a sim node). */
+export type Module = { id: string; label: string };
 
 export type PortDir = 'in' | 'out';
 
@@ -30,6 +43,8 @@ export type ServiceData = {
 	/** requests/second this instance can serve */
 	capacity: number;
 	language?: string;
+	/** deployed version; bumps on each deploy */
+	version: number;
 };
 
 export type DatabaseData = {
@@ -71,6 +86,24 @@ export type PoolData = {
 	kind: 'pool';
 	label: string;
 	capacity: number;
+	/** deployed version; bumps on each deploy */
+	version: number;
+};
+
+/**
+ * A monolith: a single deployable/throttled unit that *contains* modules. The
+ * modules are illustrative — internally it simulates as one service (one
+ * capacity, one version). Converting to microservices turns each module into a
+ * standalone service behind a gateway.
+ */
+export type MonolithData = {
+	kind: 'monolith';
+	label: string;
+	/** requests/second the whole monolith can serve */
+	capacity: number;
+	/** deployed version; one version covers every module */
+	version: number;
+	modules: Module[];
 };
 
 /** Discriminated union over `kind`. */
@@ -80,7 +113,8 @@ export type ArchData =
 	| GatewayData
 	| LoadData
 	| LoadBalancerData
-	| PoolData;
+	| PoolData
+	| MonolithData;
 
 /** A node on the canvas, typed with our domain data. */
 export type ArchNode = Node<ArchData>;

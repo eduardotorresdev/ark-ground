@@ -116,7 +116,7 @@ class GraphStore {
 			width,
 			height,
 			style: sizeStyle(width, height),
-			data: { kind: 'pool', label: `${svc.data.label} (pool)`, capacity: svc.data.capacity }
+			data: { kind: 'pool', label: `${svc.data.label} (pool)`, capacity: svc.data.capacity, version: 1 }
 		};
 		const child0: ArchNode = {
 			...svc,
@@ -288,6 +288,176 @@ class GraphStore {
 		this.edges = this.edges.filter(
 			(e) => e.source !== poolId && e.target !== poolId && e.source !== lbId && e.target !== lbId
 		);
+	}
+
+	// ---- Monolith module editing -------------------------------------------
+
+	addModule(monolithId: string): string | null {
+		const mono = this.nodes.find((n) => n.id === monolithId);
+		if (mono?.data.kind !== 'monolith') return null;
+		const moduleId = `mod-${++this.#seq}`;
+		const label = `Módulo ${mono.data.modules.length + 1}`;
+		this.updateData(monolithId, { modules: [...mono.data.modules, { id: moduleId, label }] });
+		return moduleId;
+	}
+
+	renameModule(monolithId: string, moduleId: string, label: string) {
+		const mono = this.nodes.find((n) => n.id === monolithId);
+		if (mono?.data.kind !== 'monolith') return;
+		this.updateData(monolithId, {
+			modules: mono.data.modules.map((m) => (m.id === moduleId ? { ...m, label } : m))
+		});
+	}
+
+	removeModule(monolithId: string, moduleId: string) {
+		const mono = this.nodes.find((n) => n.id === monolithId);
+		if (mono?.data.kind !== 'monolith') return;
+		this.updateData(monolithId, {
+			modules: mono.data.modules.filter((m) => m.id !== moduleId)
+		});
+	}
+
+	// ---- Architecture conversions ------------------------------------------
+
+	/** The gateway feeding every one of `ids` directly, or null. */
+	commonGateway(ids: string[]): string | null {
+		for (const g of this.nodes.filter((n) => n.data.kind === 'api-gateway')) {
+			const targets = new Set(this.edges.filter((e) => e.source === g.id).map((e) => e.target));
+			if (ids.every((id) => targets.has(id))) return g.id;
+		}
+		return null;
+	}
+
+	/** Can these selected nodes collapse into a monolith? (2+ services, 1 gateway) */
+	canMonolithize(ids: string[]): boolean {
+		if (ids.length < 2) return false;
+		const nodes = ids.map((id) => this.nodes.find((n) => n.id === id));
+		if (!nodes.every((n) => n && n.data.kind === 'service' && !n.parentId)) return false;
+		return this.commonGateway(ids) != null;
+	}
+
+	/**
+	 * Explode a monolith into one service per module behind a new API gateway.
+	 * If the monolith had a database, each service gets its own (database-per-
+	 * service); otherwise none. Inbound traffic is rewired to the gateway.
+	 */
+	monolithToMicroservices(id: string): string | null {
+		const mono = this.nodes.find((n) => n.id === id);
+		if (mono?.data.kind !== 'monolith' || mono.data.modules.length < 2) return null;
+
+		const dbEdge = this.edges.find(
+			(e) =>
+				e.source === id && this.nodes.find((n) => n.id === e.target)?.data.kind === 'database'
+		);
+		const db = dbEdge ? this.nodes.find((n) => n.id === dbEdge.target) : null;
+
+		const COL = 240;
+		const ROW = 130;
+		const gwId = this.#id('api-gateway');
+		const gw: ArchNode = {
+			id: gwId,
+			type: 'api-gateway',
+			position: { ...mono.position },
+			data: { kind: 'api-gateway', ...getDef('api-gateway').create() } as ArchData
+		};
+
+		const newNodes: ArchNode[] = [gw];
+		const newEdges: Edge[] = [];
+		mono.data.modules.forEach((m, i) => {
+			const sid = this.#id('service');
+			newNodes.push({
+				id: sid,
+				type: 'service',
+				position: { x: mono.position.x + COL, y: mono.position.y + i * ROW },
+				data: { kind: 'service', label: m.label, capacity: 500, version: 1 }
+			});
+			newEdges.push({ id: `e-${gwId}-${sid}`, source: gwId, target: sid, type: 'load' });
+			if (db && db.data.kind === 'database') {
+				const did = this.#id('database');
+				newNodes.push({
+					id: did,
+					type: 'database',
+					position: { x: mono.position.x + COL * 2, y: mono.position.y + i * ROW },
+					data: {
+						kind: 'database',
+						label: `${m.label} db`,
+						engine: db.data.engine,
+						persistent: db.data.persistent,
+						capacity: db.data.capacity
+					}
+				});
+				newEdges.push({ id: `e-${sid}-${did}`, source: sid, target: did, type: 'load' });
+			}
+		});
+
+		const drop = new Set([id, ...(db ? [db.id] : [])]);
+		const rewired = this.edges
+			.filter((e) => e.source !== id) // drop monolith outbound (incl. -> db)
+			.filter((e) => !db || (e.source !== db.id && e.target !== db.id))
+			.map((e) => (e.target === id ? { ...e, target: gwId } : e));
+
+		this.nodes = [...this.nodes.filter((n) => !drop.has(n.id)), ...newNodes];
+		this.edges = [...rewired, ...newEdges];
+		return gwId;
+	}
+
+	/**
+	 * Collapse selected services (sharing one gateway) into a single monolith.
+	 * Their private databases merge into one shared database. The gateway is
+	 * removed when no other services remain behind it; otherwise it keeps
+	 * routing to the new monolith alongside the survivors.
+	 */
+	microservicesToMonolith(ids: string[]): string | null {
+		if (!this.canMonolithize(ids)) return null;
+		const services = ids.map((id) => this.nodes.find((n) => n.id === id)!);
+		const gwId = this.commonGateway(ids)!;
+		const gw = this.nodes.find((n) => n.id === gwId)!;
+
+		// Private databases of the selected services.
+		const dbIds = new Set<string>();
+		for (const s of services)
+			for (const e of this.edges)
+				if (e.source === s.id && this.nodes.find((n) => n.id === e.target)?.data.kind === 'database')
+					dbIds.add(e.target);
+		const dbList = [...dbIds];
+		const sharedDb = dbList[0] ?? null;
+
+		const monoId = this.#id('monolith');
+		const mono: ArchNode = {
+			id: monoId,
+			type: 'monolith',
+			position: { ...gw.position },
+			data: {
+				kind: 'monolith',
+				label: 'Monolito',
+				capacity: 900,
+				version: 1,
+				modules: services.map((s) => ({ id: `mod-${++this.#seq}`, label: s.data.label }))
+			}
+		};
+
+		const selSet = new Set(ids);
+		const gwTargets = this.edges.filter((e) => e.source === gwId).map((e) => e.target);
+		const remaining = gwTargets.filter((t) => !selSet.has(t));
+		const removeGw = remaining.length === 0;
+
+		const dropNodes = new Set([...ids, ...dbList.slice(1), ...(removeGw ? [gwId] : [])]);
+		const keep = this.nodes.filter((n) => !dropNodes.has(n.id));
+
+		const newEdges: Edge[] = [];
+		if (sharedDb)
+			newEdges.push({ id: `e-${monoId}-${sharedDb}`, source: monoId, target: sharedDb, type: 'load' });
+		if (!removeGw) newEdges.push({ id: `e-${gwId}-${monoId}`, source: gwId, target: monoId, type: 'load' });
+
+		const edgesKept = this.edges
+			.filter((e) => !selSet.has(e.source) && !selSet.has(e.target))
+			.filter((e) => !dbList.slice(1).some((d) => d === e.source || d === e.target))
+			.filter((e) => !(removeGw && e.source === gwId)) // drop gateway outbound when removed
+			.map((e) => (removeGw && e.target === gwId ? { ...e, target: monoId } : e));
+
+		this.nodes = [...keep, mono];
+		this.edges = [...edgesKept, ...newEdges];
+		return monoId;
 	}
 
 	reset() {

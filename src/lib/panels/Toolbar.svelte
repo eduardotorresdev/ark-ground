@@ -5,6 +5,7 @@
 	import Upload from '@lucide/svelte/icons/upload';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import BoxSelect from '@lucide/svelte/icons/box-select';
+	import Boxes from '@lucide/svelte/icons/boxes';
 	import { graph } from '$lib/stores/graph.svelte';
 	import { ui } from '$lib/stores/ui.svelte';
 	import { LEVEL_STROKE } from '$lib/sim/engine';
@@ -30,6 +31,13 @@
 		graph.reset();
 		ui.select(null);
 	}
+
+	const canMonolithize = $derived(graph.canMonolithize([...ui.selectedIds]));
+
+	function toMonolith() {
+		const id = graph.microservicesToMonolith([...ui.selectedIds]);
+		if (id) ui.select(id);
+	}
 </script>
 
 <header class="flex items-center gap-2 border-b bg-background px-3 py-2">
@@ -44,6 +52,12 @@
 			</span>
 		{/each}
 	</div>
+
+	{#if canMonolithize}
+		<Button class="ml-3" variant="default" size="sm" onclick={toMonolith}>
+			<Boxes size={16} /> Transformar em monolito
+		</Button>
+	{/if}
 
 	<div class="ml-auto flex items-center gap-2">
 		<Button

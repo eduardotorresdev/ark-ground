@@ -1,7 +1,7 @@
 import type { ArchNode } from '$lib/registry/types';
 import type { Edge } from '@xyflow/svelte';
 
-export const CURRENT_VERSION = 3;
+export const CURRENT_VERSION = 4;
 
 export type Snapshot = {
 	version: number;
@@ -63,7 +63,19 @@ export const MIGRATIONS: Record<number, (s: AnySnapshot) => AnySnapshot> = {
 			}),
 			edges: s.edges ?? []
 		};
-	}
+	},
+	// v3 -> v4: deployable nodes (service/pool/monolith) gain a `version`.
+	3: (s) => ({
+		version: 4,
+		nodes: (s.nodes ?? []).map((n) => {
+			const k = n.data?.kind;
+			if (k === 'service' || k === 'pool' || k === 'monolith') {
+				return { ...n, data: { ...n.data, version: n.data.version ?? 1 } };
+			}
+			return n;
+		}),
+		edges: s.edges ?? []
+	})
 };
 
 /** Upgrade any historical snapshot to the current shape. */
