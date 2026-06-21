@@ -9,7 +9,7 @@ export const loadBalancerDef: NodeDef<'load-balancer'> = {
 	icon: Split,
 	accent: 'border-sky-300 bg-sky-50 text-sky-700',
 	ports: [
-		{ id: 'in', dir: 'in', accepts: ['load', 'api-gateway', 'service'] },
+		{ id: 'in', dir: 'in', accepts: ['load', 'api-gateway', 'service', 'broker'] },
 		{ id: 'out', dir: 'out', accepts: ['pool', 'service', 'monolith'] }
 	],
 	component: LoadBalancerNode,

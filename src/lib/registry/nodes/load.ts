@@ -8,7 +8,13 @@ export const loadDef: NodeDef<'load'> = {
 	category: 'Simulação',
 	icon: Zap,
 	accent: 'border-violet-300 bg-violet-50 text-violet-700',
-	ports: [{ id: 'out', dir: 'out', accepts: ['api-gateway', 'service', 'load-balancer', 'monolith'] }],
+	ports: [
+		{
+			id: 'out',
+			dir: 'out',
+			accepts: ['api-gateway', 'service', 'load-balancer', 'monolith', 'broker']
+		}
+	],
 	component: LoadNode,
 	create: () => ({ label: 'Carga', rps: 100 })
 };

@@ -1,6 +1,7 @@
 import { graph } from './graph.svelte';
 import { deploy } from './deploy.svelte';
 import { bucket, computeSim, type Level, type NodeStat, type SimResult } from '$lib/sim/engine';
+import { advance, sameBacklog, type BrokerRuntime, type BrokerStat } from '$lib/sim/broker';
 
 type Disp = { offered: number; served: number };
 
@@ -14,9 +15,14 @@ type Disp = { offered: number; served: number };
  */
 class SimStore {
 	#capMult = $state.raw<Record<string, number>>({});
+	/** Per-broker backlog, integrated each frame in the tick. The only sim state. */
+	#brokerState = $state.raw<Record<string, BrokerRuntime>>({});
 	/** Reactive frame clock (performance.now) so deploy progress bars animate. */
 	now = $state(0);
-	#result = $derived.by<SimResult>(() => computeSim(graph.nodes, graph.edges, this.#capMult));
+	#lastNow = 0;
+	#result = $derived.by<SimResult>(() =>
+		computeSim(graph.nodes, graph.edges, this.#capMult, this.#brokerState)
+	);
 	disp = $state<Record<string, Disp>>({});
 	#raf = 0;
 
@@ -26,6 +32,11 @@ class SimStore {
 
 	nodeStat(id: string): NodeStat | undefined {
 		return this.#result.nodes[id];
+	}
+
+	/** Broker backlog/buffer stats for a node, if it is a broker. */
+	brokerStat(id: string): BrokerStat | undefined {
+		return this.#result.nodes[id]?.broker;
 	}
 
 	edgeStat(id: string) {
@@ -44,7 +55,9 @@ class SimStore {
 	level(id: string): Level {
 		const t = this.#result.nodes[id];
 		if (!t) return 'idle';
-		if (t.capacity == null) return t.level; // sources keep their static level
+		// A producer back-pressured by a downstream broker shows as critical.
+		if (t.blocked && t.blocked > 0.5) return 'crit';
+		if (t.capacity == null) return t.level; // sources & brokers keep their static level
 		const util = t.capacity > 0 ? this.dispOf(id).offered / t.capacity : 0;
 		return bucket(util);
 	}
@@ -52,6 +65,10 @@ class SimStore {
 	start(): () => void {
 		const tick = () => {
 			const nowMs = performance.now();
+			// Seconds since last frame, clamped so a backgrounded tab can't dump a
+			// huge backlog jump when it refocuses.
+			const dt = this.#lastNow ? Math.min(0.1, (nowMs - this.#lastNow) / 1000) : 0;
+			this.#lastNow = nowMs;
 			this.now = nowMs;
 			// Recompute deploy capacity multipliers; settle finished deploys.
 			const mult = deploy.multipliers();
@@ -59,6 +76,25 @@ class SimStore {
 			deploy.settle(nowMs);
 
 			const targets = this.#result.nodes;
+
+			// Integrate broker backlogs forward by dt using this frame's rates. The
+			// resulting state feeds the next computeSim (one-frame lag, invisible at
+			// 60fps). Rebuilding the map also prunes removed brokers.
+			if (dt > 0) {
+				const next: Record<string, BrokerRuntime> = {};
+				let hasBroker = false;
+				for (const id in targets) {
+					const bs = targets[id].broker;
+					if (!bs) continue;
+					hasBroker = true;
+					next[id] = advance(bs, this.#brokerState[id], dt);
+				}
+				if (
+					(hasBroker || Object.keys(this.#brokerState).length) &&
+					!sameBacklog(next, this.#brokerState)
+				)
+					this.#brokerState = next;
+			}
 			const next: Record<string, Disp> = {};
 			let changed = false;
 			for (const id in targets) {

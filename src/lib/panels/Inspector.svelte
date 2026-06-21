@@ -15,9 +15,28 @@
 	import { sim } from '$lib/stores/sim.svelte';
 	import { getDef } from '$lib/registry';
 	import { DEFAULT_GATEWAY_WEIGHT } from '$lib/sim/engine';
-	import type { ArchData, DeployStrategy, LbAlgorithm } from '$lib/registry/types';
+	import type {
+		ArchData,
+		BrokerFullPolicy,
+		BrokerMode,
+		DeployStrategy,
+		LbAlgorithm
+	} from '$lib/registry/types';
 
 	const node = $derived(ui.selectedNode);
+
+	// Broker: live backlog stats (per consumer in topic mode) read from the sim.
+	const brokerStat = $derived(
+		node?.data.kind === 'broker' ? sim.nodeStat(node.id)?.broker : undefined
+	);
+	function consumerLabel(consumerId: string): string {
+		return graph.nodes.find((n) => n.id === consumerId)?.data.label ?? consumerId;
+	}
+	function fmtLag(s: number): string {
+		if (!(s > 0)) return '0s';
+		if (!Number.isFinite(s)) return '∞';
+		return s >= 10 ? `${Math.round(s)}s` : `${s.toFixed(1)}s`;
+	}
 
 	// API gateway routing: each connected target gets a configurable share of the
 	// load. Weights are relative; the displayed % is the normalized proportion.
@@ -31,7 +50,12 @@
 		const total = targets.reduce((s, t) => s + (weights[t.id] ?? DEFAULT_GATEWAY_WEIGHT), 0);
 		return targets.map((t) => {
 			const weight = weights[t.id] ?? DEFAULT_GATEWAY_WEIGHT;
-			return { id: t.id, label: t.data.label, weight, pct: total > 0 ? Math.round((weight / total) * 100) : 0 };
+			return {
+				id: t.id,
+				label: t.data.label,
+				weight,
+				pct: total > 0 ? Math.round((weight / total) * 100) : 0
+			};
 		});
 	});
 
@@ -325,6 +349,66 @@
 			>
 				<Split size={16} /> Converter em microsserviços
 			</Button>
+		{:else if node.data.kind === 'broker'}
+			<div class="flex flex-col gap-1.5">
+				<Label for="f-mode">Modo de entrega</Label>
+				<select
+					id="f-mode"
+					class="h-9 rounded-md border bg-background px-2 text-sm"
+					value={node.data.mode}
+					onchange={(e) => graph.updateData(node.id, { mode: e.currentTarget.value as BrokerMode })}
+				>
+					<option value="work-queue">fila de trabalho (consumidores competem)</option>
+					<option value="topic">tópico (fan-out para todos)</option>
+				</select>
+			</div>
+			{@render scale(
+				'f-buf',
+				'Tamanho do buffer (quanta)',
+				node.data.bufferSize,
+				'bufferSize',
+				1000000,
+				1000
+			)}
+			{@render scale(
+				'f-deliv',
+				'Taxa máx. de entrega (req/s)',
+				node.data.maxDeliveryRate,
+				'maxDeliveryRate',
+				200000,
+				500
+			)}
+			<div class="flex flex-col gap-1.5">
+				<Label for="f-policy">Buffer cheio</Label>
+				<select
+					id="f-policy"
+					class="h-9 rounded-md border bg-background px-2 text-sm"
+					value={node.data.fullPolicy}
+					onchange={(e) =>
+						graph.updateData(node.id, { fullPolicy: e.currentTarget.value as BrokerFullPolicy })}
+				>
+					<option value="drop">descarte (o broker perde mensagens)</option>
+					<option value="backpressure">backpressure (freia o produtor)</option>
+				</select>
+			</div>
+			{#if brokerStat}
+				<Separator />
+				<div class="flex flex-col gap-1.5">
+					<Label>Backlog por consumidor</Label>
+					{#if brokerStat.perConsumer.length}
+						{#each brokerStat.perConsumer as c (c.edgeId)}
+							<div class="flex items-center justify-between gap-2 text-xs">
+								<span class="truncate font-medium">{consumerLabel(c.consumerId)}</span>
+								<span class="shrink-0 tabular-nums text-muted-foreground">
+									{Math.round(c.backlog).toLocaleString('pt-BR')} msg · {fmtLag(c.lagSeconds)}
+								</span>
+							</div>
+						{/each}
+					{:else}
+						<p class="text-xs text-muted-foreground">Conecte consumidores para ver o lag.</p>
+					{/if}
+				</div>
+			{/if}
 		{/if}
 
 		{#if deployable && node}
@@ -339,24 +423,16 @@
 						</div>
 					</div>
 				{:else}
-					<select
-						class="h-9 rounded-md border bg-background px-2 text-sm"
-						bind:value={strategy}
-					>
+					<select class="h-9 rounded-md border bg-background px-2 text-sm" bind:value={strategy}>
 						{#each strategies as s (s)}
 							<option value={s}>{s}</option>
 						{/each}
 					</select>
 					<div class="flex items-center gap-2">
-						<input
-							type="range"
-							min="1"
-							max="10"
-							step="1"
-							bind:value={durationSec}
-							class="flex-1"
-						/>
-						<span class="w-10 text-right text-xs tabular-nums text-muted-foreground">{durationSec}s</span>
+						<input type="range" min="1" max="10" step="1" bind:value={durationSec} class="flex-1" />
+						<span class="w-10 text-right text-xs tabular-nums text-muted-foreground"
+							>{durationSec}s</span
+						>
 					</div>
 					<Button variant="default" size="sm" onclick={startDeploy}>
 						<Rocket size={16} /> Deploy v{version + 1}

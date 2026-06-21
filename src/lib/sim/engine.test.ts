@@ -42,6 +42,16 @@ const gateway = (id: string, weights?: Record<string, number>): ArchNode => ({
 	position: at,
 	data: { kind: 'api-gateway', label: id, capacity: 100000, weights }
 });
+const broker = (
+	id: string,
+	mode: 'topic' | 'work-queue' = 'work-queue',
+	fullPolicy: 'drop' | 'backpressure' = 'drop'
+): ArchNode => ({
+	id,
+	type: 'broker',
+	position: at,
+	data: { kind: 'broker', label: id, mode, bufferSize: 10000, maxDeliveryRate: 10000, fullPolicy }
+});
 const edge = (source: string, target: string): Edge => ({
 	id: `${source}->${target}`,
 	source,
@@ -153,6 +163,61 @@ describe('api gateway routing', () => {
 		const { nodes: stat } = computeSim(nodes, edges);
 		expect(stat.a.offered).toBe(150);
 		expect(stat.b.offered).toBe(150);
+	});
+});
+
+describe('broker', () => {
+	it('work-queue: drains at the sum of consumer capacities, decoupled from publish', () => {
+		const nodes = [load('g', 1000), broker('mq'), service('a', 300), service('b', 300)];
+		const edges = [edge('g', 'mq'), edge('mq', 'a'), edge('mq', 'b')];
+		const { nodes: stat } = computeSim(nodes, edges);
+
+		expect(stat.mq.offered).toBe(1000); // accepts the full publish rate
+		expect(stat.mq.served).toBe(600); // delivers only what the consumers drain
+		expect(stat.mq.broker?.mode).toBe('work-queue');
+		expect(stat.a.offered).toBe(300);
+		expect(stat.b.offered).toBe(300);
+	});
+
+	it('topic: fans out the full publish rate to every consumer', () => {
+		const nodes = [
+			load('g', 1000),
+			broker('mq', 'topic'),
+			service('fast', 2000),
+			service('slow', 300)
+		];
+		const edges = [edge('g', 'mq'), edge('mq', 'fast'), edge('mq', 'slow')];
+		const { nodes: stat } = computeSim(nodes, edges);
+
+		expect(stat.fast.offered).toBe(1000); // fast keeps up
+		expect(stat.slow.offered).toBe(300); // slow is capped at its capacity
+		expect(stat.slow.dropped).toBe(0); // excess queues as backlog, not consumer drops
+	});
+
+	it('drops the overflow at the broker once the buffer is full', () => {
+		const nodes = [load('g', 1000), broker('mq'), service('a', 300), service('b', 300)];
+		const edges = [edge('g', 'mq'), edge('mq', 'a'), edge('mq', 'b')];
+		const brokerState = { mq: { backlog: { __shared__: 10000 } } };
+		const { nodes: stat } = computeSim(nodes, edges, {}, brokerState);
+
+		expect(stat.mq.dropped).toBe(400); // publish 1000 − drain 600
+		expect(stat.mq.level).toBe('crit');
+	});
+
+	it('backpressure charges the refused rate back to the producer', () => {
+		const nodes = [
+			load('g', 1000),
+			service('p', 5000),
+			broker('mq', 'work-queue', 'backpressure'),
+			service('c', 300)
+		];
+		const edges = [edge('g', 'p'), edge('p', 'mq'), edge('mq', 'c')];
+		const brokerState = { mq: { backlog: { __shared__: 10000 } } };
+		const { nodes: stat } = computeSim(nodes, edges, {}, brokerState);
+
+		expect(stat.mq.broker?.blocked).toBe(700); // publish 1000 − drain 300
+		expect(stat.p.blocked).toBe(700); // attributed to the producer
+		expect(stat.p.level).toBe('crit');
 	});
 });
 

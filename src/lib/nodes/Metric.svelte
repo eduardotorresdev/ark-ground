@@ -21,5 +21,8 @@
 		{#if stat.dropped > 0.5}
 			<span style:color={LEVEL_STROKE.crit}>−{Math.round(stat.dropped)}</span>
 		{/if}
+		{#if stat.blocked && stat.blocked > 0.5}
+			<span style:color={LEVEL_STROKE.crit}>⊘{Math.round(stat.blocked)}</span>
+		{/if}
 	</div>
 {/if}

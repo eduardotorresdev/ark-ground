@@ -9,7 +9,8 @@ export type NodeKind =
 	| 'load'
 	| 'load-balancer'
 	| 'pool'
-	| 'monolith';
+	| 'monolith'
+	| 'broker';
 
 /** Deploy strategies, in order of increasing safety. */
 export type DeployStrategy = 'recreate' | 'blue-green' | 'rolling';
@@ -113,6 +114,36 @@ export type MonolithData = {
 	modules: Module[];
 };
 
+/** topic = fan-out (every consumer gets every quantum); work-queue = competing consumers. */
+export type BrokerMode = 'topic' | 'work-queue';
+/** What the broker does when its buffer is full. */
+export type BrokerFullPolicy = 'backpressure' | 'drop';
+
+/**
+ * Asynchronous message broker / queue. Unlike every other node, it is *stateful*:
+ * it accepts published load into a buffer regardless of how fast the consumers
+ * drain it, so a slow consumer builds backlog over time instead of immediately
+ * back-pressuring the producer. The backlog is integrated frame-by-frame in the
+ * sim store; `computeSim` reads the current backlog to decide the drain rate.
+ *
+ * - `topic`: fan-out. Each consumer has its own offset over a shared log, so a
+ *   fast consumer stays caught up while a slow one lags alone.
+ * - `work-queue`: competing consumers share one queue; drain = sum of capacities.
+ *
+ * No `capacity` (its egress ceiling is `maxDeliveryRate`) and no `version`
+ * (it is infrastructure, like the load balancer — not deployed).
+ */
+export type BrokerData = {
+	kind: 'broker';
+	label: string;
+	mode: BrokerMode;
+	/** max quanta the buffer can hold — a count, not a rate */
+	bufferSize: number;
+	/** ceiling on the delivery throughput (req/s); the broker's own infra limit */
+	maxDeliveryRate: number;
+	fullPolicy: BrokerFullPolicy;
+};
+
 /** Discriminated union over `kind`. */
 export type ArchData =
 	| ServiceData
@@ -121,7 +152,8 @@ export type ArchData =
 	| LoadData
 	| LoadBalancerData
 	| PoolData
-	| MonolithData;
+	| MonolithData
+	| BrokerData;
 
 /** A node on the canvas, typed with our domain data. */
 export type ArchNode = Node<ArchData>;

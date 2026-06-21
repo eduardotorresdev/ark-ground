@@ -5,14 +5,18 @@ import type { ArchNode } from '$lib/registry/types';
 export type Quantum = { id: string; nodeIds: string[] };
 
 /**
- * Kinds that route traffic without statically coupling what they connect. They
- * are edge infrastructure, not part of any quantum, and crucially they do NOT
- * bridge the things on either side: a load generator and an API gateway each
- * just forward requests, so the services behind them stay independently
- * deployable. Removing them from the graph is what lets sibling services fan out
- * into separate quanta instead of collapsing into one.
+ * Kinds that do NOT statically couple what they connect — they are dropped from
+ * the quantum graph so they never bridge the things on either side. Two reasons
+ * land a kind here:
+ *  - `load` / `api-gateway`: transparent *synchronous* routing — they just
+ *    forward requests, so services behind one gateway stay independently
+ *    deployable (sibling services fan out into separate quanta).
+ *  - `broker`: *asynchronous* decoupling — a producer and a consumer that only
+ *    talk through a message broker do not share a lifecycle, so they are
+ *    separate quanta. (Same mechanism, opposite rationale: the broker is a
+ *    quantum boundary, not transparent infra.)
  */
-const TRANSPARENT = new Set<ArchNode['data']['kind']>(['load', 'api-gateway']);
+const TRANSPARENT = new Set<ArchNode['data']['kind']>(['load', 'api-gateway', 'broker']);
 
 /**
  * Autodetect architecture quanta from the diagram topology.

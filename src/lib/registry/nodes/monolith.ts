@@ -16,7 +16,7 @@ export const monolithDef: NodeDef<'monolith'> = {
 	accent: 'border-fuchsia-300 bg-fuchsia-50 text-fuchsia-700',
 	ports: [
 		{ id: 'in', dir: 'in' },
-		{ id: 'out', dir: 'out', accepts: ['database', 'service'] }
+		{ id: 'out', dir: 'out', accepts: ['database', 'service', 'broker'] }
 	],
 	component: MonolithNode,
 	create: () => ({ label: 'Monolito', capacity: 900, version: 1, modules: [] })

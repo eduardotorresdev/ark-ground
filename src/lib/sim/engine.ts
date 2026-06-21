@@ -1,5 +1,6 @@
-import type { ArchNode } from '$lib/registry/types';
+import type { ArchNode, BrokerData } from '$lib/registry/types';
 import type { Edge } from '@xyflow/svelte';
+import { deliver, type BrokerInputs, type BrokerRuntime, type BrokerStat } from './broker';
 
 /** Load level buckets, by utilization (offered / capacity). */
 export type Level = 'idle' | 'ok' | 'warn' | 'crit';
@@ -20,6 +21,10 @@ export type NodeStat = {
 	cyclic?: boolean;
 	/** a pool with no balancer feeding it */
 	warn?: 'no-lb';
+	/** broker-only: buffer/backlog stats (the node is asynchronous and stateful) */
+	broker?: BrokerStat;
+	/** producer-only: req/s a downstream broker refused via backpressure */
+	blocked?: number;
 };
 
 export type EdgeStat = {
@@ -77,7 +82,8 @@ function capacityOf(n: ArchNode): number | null {
 export function computeSim(
 	nodes: ArchNode[],
 	edges: Edge[],
-	capMult: Record<string, number> = {}
+	capMult: Record<string, number> = {},
+	brokerState: Record<string, BrokerRuntime> = {}
 ): SimResult {
 	const byId = new Map(nodes.map((n) => [n.id, n]));
 	const poolIds = new Set(nodes.filter((n) => n.data.kind === 'pool').map((n) => n.id));
@@ -220,6 +226,53 @@ export function computeSim(
 				cyclic: cyc,
 				warn: lb ? undefined : 'no-lb'
 			};
+			continue;
+		}
+
+		if (kind === 'broker') {
+			const d = n.data as BrokerData;
+			const outs = outEdges.get(id) ?? [];
+			const consumers = outs.map((e) => ({
+				edgeId: e.id,
+				consumerId: e.target,
+				capacity: capacityOf(byId.get(e.target)!) ?? 0
+			}));
+			const inputs: BrokerInputs = {
+				mode: d.mode,
+				bufferSize: d.bufferSize,
+				maxDeliveryRate: d.maxDeliveryRate,
+				fullPolicy: d.fullPolicy,
+				publishRate: offered,
+				consumers
+			};
+			const { deliveryByEdge, stat: bstat } = deliver(inputs, brokerState[id]);
+			// Decouple ingress from egress: emit the per-consumer drain rate, not
+			// the publish rate. Don't use the broadcast `emit` helper.
+			for (const e of outs) flow.set(e.id, deliveryByEdge[e.id] ?? 0);
+			served.set(id, bstat.deliveryRate);
+			const overloaded = bstat.dropped > 0.5 || bstat.blocked > 0.5;
+			stat[id] = {
+				offered,
+				served: bstat.deliveryRate,
+				capacity: null,
+				util: null,
+				dropped: bstat.dropped,
+				level: overloaded ? 'crit' : bucket(bstat.fill),
+				cyclic: cyc,
+				broker: bstat
+			};
+			// Backpressure (one hop): charge the refused rate back to the producers
+			// so they show as blocked/crit, without recomputing their own upstream.
+			if (bstat.blocked > 0.5) {
+				const ins = inEdges.get(id) ?? [];
+				const totalIn = ins.reduce((s, e) => s + (flow.get(e.id) ?? 0), 0);
+				for (const e of ins) {
+					const p = stat[e.source];
+					if (!p) continue;
+					const share = totalIn > 0 ? bstat.blocked * ((flow.get(e.id) ?? 0) / totalIn) : 0;
+					stat[e.source] = { ...p, blocked: (p.blocked ?? 0) + share, level: 'crit' };
+				}
+			}
 			continue;
 		}
 

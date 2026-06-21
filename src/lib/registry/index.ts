@@ -6,12 +6,14 @@ import { loadDef } from './nodes/load';
 import { loadBalancerDef } from './nodes/load-balancer';
 import { poolDef } from './nodes/pool';
 import { monolithDef } from './nodes/monolith';
+import { brokerDef } from './nodes/broker';
 
 /** Central registry: kind -> definition. Add new kinds here and in NodeKind. */
 export const registry: Record<NodeKind, NodeDef> = {
 	load: loadDef,
 	'api-gateway': gatewayDef,
 	'load-balancer': loadBalancerDef,
+	broker: brokerDef,
 	service: serviceDef,
 	monolith: monolithDef,
 	pool: poolDef,

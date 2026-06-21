@@ -36,7 +36,24 @@ const pool = (id: string): ArchNode => ({
 	position: at,
 	data: { kind: 'pool', label: id, capacity: 500, version: 1 }
 });
-const edge = (source: string, target: string): Edge => ({ id: `${source}->${target}`, source, target });
+const broker = (id: string): ArchNode => ({
+	id,
+	type: 'broker',
+	position: at,
+	data: {
+		kind: 'broker',
+		label: id,
+		mode: 'work-queue',
+		bufferSize: 10000,
+		maxDeliveryRate: 10000,
+		fullPolicy: 'drop'
+	}
+});
+const edge = (source: string, target: string): Edge => ({
+	id: `${source}->${target}`,
+	source,
+	target
+});
 
 /** Sorted member ids of every quantum, for order-independent assertions. */
 const members = (nodes: ArchNode[], edges: Edge[]) =>
@@ -112,6 +129,14 @@ describe('detectQuanta', () => {
 	it('treats a standalone service as its own quantum', () => {
 		const nodes = [service('s')];
 		expect(members(nodes, [])).toEqual([['s']]);
+	});
+
+	it('splits producer and consumer across a broker into separate quanta', () => {
+		// Async communication decouples lifecycles: a producer and a consumer that
+		// only talk through a broker are independently deployable.
+		const nodes = [service('producer'), broker('mq'), service('consumer'), database('cdb')];
+		const edges = [edge('producer', 'mq'), edge('mq', 'consumer'), edge('consumer', 'cdb')];
+		expect(members(nodes, edges)).toEqual([['cdb', 'consumer'], ['producer']]);
 	});
 
 	it('uses the pool (not its replicas) as the quantum member', () => {
