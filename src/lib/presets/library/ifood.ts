@@ -20,15 +20,19 @@ export const ifood: PresetEntry = {
 		},
 		graph: snapshot(
 			[
-				node('load-1', 'load', { label: 'Tráfego', rps: 5000 }),
+				node('load-1', 'load', { label: 'Tráfego', rps: 3000 }),
 				node('api-gateway-1', 'api-gateway', { label: 'API Gateway' }),
-				node('service-1', 'service', { label: 'Pedido', language: 'java', capacity: 1500 }),
-				node('service-2', 'service', { label: 'Restaurante', language: 'java', capacity: 1500 }),
-				node('service-3', 'service', { label: 'Entrega', language: 'go', capacity: 1500 }),
+				node('service-1', 'service', { label: 'Pedido', language: 'java', capacity: 3000 }),
+				node('service-2', 'service', { label: 'Restaurante', language: 'java', capacity: 3000 }),
+				node('service-3', 'service', { label: 'Entrega', language: 'go', capacity: 3000 }),
 				node('broker-1', 'broker', { label: 'Fila de pedidos', mode: 'work-queue' }),
-				node('database-1', 'database', { label: 'Pedido DB', engine: 'postgres' }),
-				node('database-2', 'database', { label: 'Restaurante DB', engine: 'postgres' }),
-				node('database-3', 'database', { label: 'Entrega DB', engine: 'mongo' })
+				node('database-1', 'database', { label: 'Pedido DB', engine: 'postgres', capacity: 2000 }),
+				node('database-2', 'database', {
+					label: 'Restaurante DB',
+					engine: 'postgres',
+					capacity: 2000
+				}),
+				node('database-3', 'database', { label: 'Entrega DB', engine: 'mongo', capacity: 2000 })
 			],
 			[
 				edge('load-1', 'api-gateway-1'),

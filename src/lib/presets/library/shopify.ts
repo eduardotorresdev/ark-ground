@@ -27,9 +27,9 @@ export const shopify: PresetEntry = {
 		},
 		graph: snapshot(
 			[
-				node('load-1', 'load', { label: 'Tráfego', rps: 5000 }),
+				node('load-1', 'load', { label: 'Tráfego', rps: 1500 }),
 				node('load-balancer-1', 'load-balancer', { label: 'Balanceador' }),
-				node('pool-1', 'pool', { label: 'Core', capacity: 1500 }),
+				node('pool-1', 'pool', { label: 'Core', capacity: 1800 }),
 				replica('monolith-1', 'monolith', 'pool-1', {
 					label: 'Core',
 					language: 'ruby',

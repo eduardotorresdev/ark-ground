@@ -29,6 +29,7 @@
 <div
 	class="relative w-full rounded-lg border-2 bg-card px-3 py-2 transition-colors"
 	class:min-w-40={!isReplica}
+	class:overflow-hidden={isReplica}
 	class:shadow-sm={!isReplica}
 	class:ring-2={(selected || isSelected) && !isReplica}
 	style:border-color={LEVEL_STROKE[level]}
@@ -52,12 +53,16 @@
 		<Handle type="target" position={Position.Left} id="in" />
 	{/if}
 	<div class="flex items-center gap-2">
-		<span class="rounded-md bg-emerald-100 p-1 text-emerald-700">
+		<span class="shrink-0 rounded-md bg-emerald-100 p-1 text-emerald-700">
 			<Server size={16} />
 		</span>
-		<div class="leading-tight">
-			<div class="text-sm font-medium">{d.label}</div>
-			<div class="flex items-center gap-1 text-xs text-muted-foreground">
+		<div class="min-w-0 leading-tight">
+			<div class="text-sm font-medium" class:truncate={isReplica}>{d.label}</div>
+			<div
+				class="flex items-center gap-1 text-xs text-muted-foreground"
+				class:overflow-hidden={isReplica}
+				class:whitespace-nowrap={isReplica}
+			>
 				<span>{d.capacity} rps</span>
 				{#if lang}
 					<span>·</span>

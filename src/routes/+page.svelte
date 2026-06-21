@@ -29,7 +29,7 @@
 
 <div class="grid h-screen grid-rows-[auto_1fr] overflow-hidden">
 	<Toolbar />
-	<div class="grid grid-cols-[16rem_1fr_18rem] overflow-hidden">
+	<div class="grid min-h-0 grid-cols-[16rem_1fr_18rem] grid-rows-1 overflow-hidden">
 		<Sidebar />
 		<SvelteFlowProvider>
 			<Editor />

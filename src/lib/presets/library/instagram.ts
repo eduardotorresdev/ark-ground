@@ -20,9 +20,9 @@ export const instagram: PresetEntry = {
 		},
 		graph: snapshot(
 			[
-				node('load-1', 'load', { label: 'Tráfego', rps: 4000 }),
+				node('load-1', 'load', { label: 'Tráfego', rps: 1500 }),
 				node('load-balancer-1', 'load-balancer', { label: 'Balanceador' }),
-				node('pool-1', 'pool', { label: 'Django', capacity: 1200 }),
+				node('pool-1', 'pool', { label: 'Django', capacity: 1500 }),
 				replica('monolith-1', 'monolith', 'pool-1', { label: 'Django', language: 'python' }),
 				replica('monolith-2', 'monolith', 'pool-1', { label: 'Django', language: 'python' }),
 				node('cache-1', 'cache', { label: 'Cache', hitRatio: 0.85 }),
