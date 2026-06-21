@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { Handle, Position, type NodeProps } from '@xyflow/svelte';
-	import Database from '@lucide/svelte/icons/database';
 	import type { DatabaseData } from '$lib/registry/types';
 	import { sim } from '$lib/stores/sim.svelte';
 	import { LEVEL_STROKE } from '$lib/sim/engine';
+	import { engineIcon } from '$lib/registry/icons';
+	import BrandIcon from '$lib/components/BrandIcon.svelte';
 	import Metric from './Metric.svelte';
 
 	/** Max per-unit bars to render before summarizing the rest. */
@@ -13,6 +14,7 @@
 	const d = $derived(data as DatabaseData);
 	const level = $derived(sim.level(id));
 	const db = $derived(sim.nodeStat(id)?.db);
+	const engine = $derived(engineIcon(d.engine));
 
 	const modeLabel = $derived.by(() => {
 		const m = d.mode ?? 'single';
@@ -39,8 +41,8 @@
 >
 	<Handle type="target" position={Position.Left} id="conn" />
 	<div class="flex items-center gap-2">
-		<span class="rounded-md bg-amber-100 p-1 text-amber-700">
-			<Database size={16} />
+		<span class="flex size-7 items-center justify-center rounded-md border bg-background">
+			<BrandIcon icon={engine} size={16} />
 		</span>
 		<div class="leading-tight">
 			<div class="text-sm font-medium">{d.label}</div>

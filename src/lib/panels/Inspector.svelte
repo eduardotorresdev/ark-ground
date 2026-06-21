@@ -16,12 +16,15 @@
 	import { getDef } from '$lib/registry';
 	import { DEFAULT_GATEWAY_WEIGHT } from '$lib/sim/engine';
 	import { effectiveDbCapacity } from '$lib/sim/database';
+	import IconSelect from '$lib/components/IconSelect.svelte';
+	import BrandIcon from '$lib/components/BrandIcon.svelte';
+	import { ENGINES, LANGUAGES, type EngineId } from '$lib/registry/icons';
+	import { DB_MODES, dbModeOption } from '$lib/registry/db-modes';
 	import { amplificationOf, isSyncKind } from '$lib/sim/syncqueue';
 	import type {
 		ArchData,
 		BrokerFullPolicy,
 		BrokerMode,
-		DbMode,
 		DeployStrategy,
 		LbAlgorithm
 	} from '$lib/registry/types';
@@ -213,11 +216,12 @@
 		{#if node.data.kind === 'service'}
 			{@render scale('f-cap', 'Capacidade (req/s)', node.data.capacity, 'capacity', 5000, 50)}
 			<div class="flex flex-col gap-1.5">
-				<Label for="f-lang">Linguagem</Label>
-				<Input
-					id="f-lang"
-					value={node.data.language ?? ''}
-					oninput={(e) => graph.updateData(node.id, { language: e.currentTarget.value })}
+				<Label>Linguagem</Label>
+				<IconSelect
+					value={node.data.language}
+					options={LANGUAGES}
+					placeholder="Escolher linguagem…"
+					onChange={(language) => graph.updateData(node.id, { language })}
 				/>
 			</div>
 			<Separator />
@@ -236,34 +240,44 @@
 			{/if}
 		{:else if node.data.kind === 'database'}
 			<div class="flex flex-col gap-1.5">
-				<Label for="f-engine">Engine</Label>
-				<select
-					id="f-engine"
-					class="h-9 rounded-md border bg-background px-2 text-sm"
-					value={node.data.engine}
-					onchange={(e) =>
-						graph.updateData(node.id, {
-							engine: e.currentTarget.value as 'postgres' | 'mysql' | 'mongo' | 'redis'
-						})}
-				>
-					<option value="postgres">postgres</option>
-					<option value="mysql">mysql</option>
-					<option value="mongo">mongo</option>
-					<option value="redis">redis</option>
-				</select>
+				<Label>Engine</Label>
+				<div class="grid grid-cols-2 gap-1.5">
+					{#each ENGINES as eng (eng.id)}
+						<Button
+							variant={node.data.engine === eng.id ? 'default' : 'outline'}
+							size="sm"
+							class="justify-start gap-2"
+							onclick={() => graph.updateData(node.id, { engine: eng.id as EngineId })}
+						>
+							<BrandIcon
+								icon={eng.icon}
+								size={16}
+								color={node.data.engine === eng.id ? 'currentColor' : undefined}
+							/>
+							{eng.label}
+						</Button>
+					{/each}
+				</div>
 			</div>
 			<div class="flex flex-col gap-1.5">
-				<Label for="f-dbmode">Modo</Label>
-				<select
-					id="f-dbmode"
-					class="h-9 rounded-md border bg-background px-2 text-sm"
-					value={node.data.mode ?? 'single'}
-					onchange={(e) => graph.updateData(node.id, { mode: e.currentTarget.value as DbMode })}
-				>
-					<option value="single">single (uma instância)</option>
-					<option value="replicas">primário + réplicas (escala leitura)</option>
-					<option value="sharded">shardado (escala leitura e escrita)</option>
-				</select>
+				<Label>Modo</Label>
+				<div class="grid grid-cols-3 gap-1.5">
+					{#each DB_MODES as m (m.id)}
+						{@const active = (node.data.mode ?? 'single') === m.id}
+						<Button
+							variant={active ? 'default' : 'outline'}
+							size="sm"
+							class="h-auto flex-col gap-1 py-2"
+							onclick={() => graph.updateData(node.id, { mode: m.id })}
+						>
+							<m.icon size={18} />
+							<span class="text-xs">{m.label}</span>
+						</Button>
+					{/each}
+				</div>
+				<p class="text-xs text-muted-foreground">
+					{dbModeOption(node.data.mode).description}
+				</p>
 			</div>
 			{@render scale(
 				'f-cap',
@@ -480,6 +494,15 @@
 			</p>
 		{:else if node.data.kind === 'monolith'}
 			{@render scale('f-cap', 'Capacidade (req/s)', node.data.capacity, 'capacity', 10000, 50)}
+			<div class="flex flex-col gap-1.5">
+				<Label>Linguagem</Label>
+				<IconSelect
+					value={node.data.language}
+					options={LANGUAGES}
+					placeholder="Escolher linguagem…"
+					onChange={(language) => graph.updateData(node.id, { language })}
+				/>
+			</div>
 			<div class="flex flex-col gap-1.5">
 				<Label>Módulos</Label>
 				{#each node.data.modules as m (m.id)}
