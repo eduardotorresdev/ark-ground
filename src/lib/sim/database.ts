@@ -143,7 +143,7 @@ export function dbDetail(d: DatabaseData, offered: number, baseCap: number): DbS
 			const share = i === 0 ? hs : coldShare;
 			const u = util(offered * share, baseCap);
 			units.push({
-				label: i === 0 && skew > 0 ? `shard 1 (quente)` : `shard ${i + 1}`,
+				label: i === 0 && skew > 0 ? `shard 1 (sobrecarregado)` : `shard ${i + 1}`,
 				util: u,
 				level: bucket(u),
 				hot: i === 0 && skew > 0
