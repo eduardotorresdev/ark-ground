@@ -61,7 +61,13 @@ function clamp01(v: number): number {
 	return v;
 }
 
-/** Shallow equality of two warmth maps, to skip needless recomputes when idle. */
+/**
+ * Shallow equality of two warmth maps, to skip needless recomputes once warmth
+ * has settled. The epsilon must stay *below* the per-frame integration step
+ * `(target − cur)·(dt/ttl)` — otherwise a slow ramp (long TTL, small dt) never
+ * clears the threshold and warmth freezes near its starting value instead of
+ * accumulating toward the target. `EPS` is well under any realistic step.
+ */
 export function sameCache(
 	a: Record<string, CacheRuntime>,
 	b: Record<string, CacheRuntime>
@@ -71,7 +77,7 @@ export function sameCache(
 	for (const id of ak) {
 		const bw = b[id];
 		if (!bw) return false;
-		if (Math.abs((a[id]?.warmth ?? 0) - bw.warmth) > 0.005) return false;
+		if (Math.abs((a[id]?.warmth ?? 0) - bw.warmth) > EPS) return false;
 	}
 	return true;
 }

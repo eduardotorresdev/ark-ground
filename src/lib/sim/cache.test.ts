@@ -30,10 +30,30 @@ describe('advanceWarmth', () => {
 });
 
 describe('sameCache', () => {
-	it('treats sub-threshold warmth changes as equal but flags real ones', () => {
+	it('treats identical warmth as equal and any real step as different', () => {
 		expect(sameCache({ a: { warmth: 0.5 } }, { a: { warmth: 0.5 } })).toBe(true);
-		expect(sameCache({ a: { warmth: 0.5 } }, { a: { warmth: 0.501 } })).toBe(true);
+		// a single integration step must register as different, even a tiny one —
+		// otherwise the dirty-check swallows the ramp (see accumulation test below).
+		expect(sameCache({ a: { warmth: 0.5 } }, { a: { warmth: 0.5005 } })).toBe(false);
 		expect(sameCache({ a: { warmth: 0.5 } }, { a: { warmth: 0.6 } })).toBe(false);
 		expect(sameCache({ a: { warmth: 0.5 } }, {})).toBe(false);
+	});
+
+	// Regression: with a long TTL the per-frame step is well under the old 0.005
+	// threshold, so sameCache reported "no change" every frame and warmth froze
+	// near 0 forever (a TTL-30s cache stuck "frio" with the backing taking 100%).
+	// Drive the real sim-store loop — advance, then commit only when !sameCache —
+	// and assert warmth actually climbs.
+	it('lets warmth accumulate frame-by-frame through the dirty-check (long TTL)', () => {
+		const ttl = 30;
+		const dt = 1 / 60; // ~60fps frame
+		let committed = { c: { warmth: initialWarmth(ttl) } };
+		for (let i = 0; i < 60 * 60; i++) {
+			// 60 s of frames
+			const next = { c: advanceWarmth(1000, ttl, committed.c, dt) };
+			if (!sameCache(next, committed)) committed = next;
+		}
+		// after ~2 time constants under load, a healthy cache should be well warm
+		expect(committed.c.warmth).toBeGreaterThan(0.85);
 	});
 });
