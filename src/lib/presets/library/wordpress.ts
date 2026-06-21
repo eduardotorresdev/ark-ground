@@ -20,9 +20,9 @@ export const wordpress: PresetEntry = {
 		},
 		graph: snapshot(
 			[
-				node('load-1', 'load', { label: 'Tráfego', rps: 2000 }),
+				node('load-1', 'load', { label: 'Tráfego', rps: 1000 }),
 				node('load-balancer-1', 'load-balancer', { label: 'Balanceador' }),
-				node('pool-1', 'pool', { label: 'WordPress (PHP)', capacity: 800 }),
+				node('pool-1', 'pool', { label: 'WordPress (PHP)', capacity: 1200 }),
 				replica('monolith-1', 'monolith', 'pool-1', { label: 'WordPress', language: 'php' }),
 				replica('monolith-2', 'monolith', 'pool-1', { label: 'WordPress', language: 'php' }),
 				node('cache-1', 'cache', { label: 'Object cache', hitRatio: 0.8 }),
@@ -32,7 +32,7 @@ export const wordpress: PresetEntry = {
 					mode: 'replicas',
 					replicaCount: 2,
 					readRatio: 0.9,
-					capacity: 1200
+					capacity: 1500
 				})
 			],
 			[

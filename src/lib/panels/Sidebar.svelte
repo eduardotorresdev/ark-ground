@@ -10,7 +10,7 @@
 </script>
 
 <aside class="flex h-full w-full flex-col border-r bg-sidebar">
-	<Tabs.Root bind:value={tab} class="flex h-full min-h-0 flex-col">
+	<Tabs.Root bind:value={tab} class="flex min-h-0 flex-1 flex-col">
 		<Tabs.List class="m-3 mb-0 flex shrink-0 gap-1 rounded-lg bg-muted p-1">
 			<Tabs.Trigger value="componentes" class={trigger}>Componentes</Tabs.Trigger>
 			<Tabs.Trigger value="exemplos" class={trigger}>Exemplos</Tabs.Trigger>

@@ -21,19 +21,19 @@ export const netflix: PresetEntry = {
 		},
 		graph: snapshot(
 			[
-				node('load-1', 'load', { label: 'Tráfego', rps: 6000 }),
+				node('load-1', 'load', { label: 'Tráfego', rps: 2400 }),
 				node('api-gateway-1', 'api-gateway', { label: 'API Gateway' }),
-				node('service-1', 'service', { label: 'Playback', language: 'java', capacity: 1500 }),
-				node('service-2', 'service', { label: 'Usuário', language: 'java', capacity: 1500 }),
+				node('service-1', 'service', { label: 'Playback', language: 'java', capacity: 3000 }),
+				node('service-2', 'service', { label: 'Usuário', language: 'java', capacity: 3000 }),
 				node('service-3', 'service', {
 					label: 'Recomendações',
 					language: 'python',
-					capacity: 1500
+					capacity: 3000
 				}),
 				node('cache-1', 'cache', { label: 'Cache de perfil', hitRatio: 0.85 }),
-				node('database-1', 'database', { label: 'Playback DB', engine: 'mysql' }),
-				node('database-2', 'database', { label: 'Usuário DB', engine: 'postgres' }),
-				node('database-3', 'database', { label: 'Recs DB', engine: 'mongo' })
+				node('database-1', 'database', { label: 'Playback DB', engine: 'mysql', capacity: 2000 }),
+				node('database-2', 'database', { label: 'Usuário DB', engine: 'postgres', capacity: 2000 }),
+				node('database-3', 'database', { label: 'Recs DB', engine: 'mongo', capacity: 2000 })
 			],
 			[
 				edge('load-1', 'api-gateway-1'),
