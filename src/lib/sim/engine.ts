@@ -182,6 +182,19 @@ export function computeSim(
 			const total = outs.reduce((s, e) => s + weightOf(e), 0);
 			for (const e of outs)
 				flow.set(e.id, (total > 0 ? sv * (weightOf(e) / total) : 0) * amplificationOf(e));
+		} else if (n.data.kind === 'load-balancer') {
+			// A load balancer *splits* its served output across its targets instead
+			// of broadcasting it. round-robin = even; weighted/least-connections =
+			// proportional to target capacity (same convention as the pool split).
+			// When no target capacity is known (e.g. the target is a pool, which does
+			// its own internal split), fall back to an even split.
+			const capOf = (e: Edge) => capacityOf(byId.get(e.target)!) ?? 0;
+			const totalCap = outs.reduce((s, e) => s + capOf(e), 0);
+			const even = n.data.algorithm === 'round-robin' || totalCap === 0;
+			for (const e of outs) {
+				const share = even ? (outs.length ? sv / outs.length : 0) : sv * (capOf(e) / totalCap);
+				flow.set(e.id, share * amplificationOf(e));
+			}
 		} else {
 			for (const e of outs) flow.set(e.id, sv * amplificationOf(e));
 		}
