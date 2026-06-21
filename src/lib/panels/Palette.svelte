@@ -18,11 +18,8 @@
 	}
 </script>
 
-<aside class="flex h-full w-full flex-col gap-4 overflow-y-auto border-r bg-sidebar p-3">
-	<div>
-		<h2 class="text-sm font-semibold">Componentes</h2>
-		<p class="text-xs text-muted-foreground">Arraste para o canvas</p>
-	</div>
+<div class="flex flex-col gap-4">
+	<p class="text-xs text-muted-foreground">Arraste para o canvas</p>
 
 	{#each groups as [category, defs] (category)}
 		<div class="flex flex-col gap-1.5">
@@ -46,4 +43,4 @@
 			{/each}
 		</div>
 	{/each}
-</aside>
+</div>
