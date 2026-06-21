@@ -373,7 +373,7 @@
 				</div>
 				<div class="flex flex-col gap-1.5">
 					<div class="flex items-center justify-between gap-2">
-						<Label for="f-skew">Pedaço quente</Label>
+						<Label for="f-skew">Pedaço sobrecarregado</Label>
 						<span class="shrink-0 text-xs tabular-nums text-muted-foreground">
 							{Math.round((node.data.skew ?? 0) * 100)}%
 						</span>
@@ -393,9 +393,8 @@
 				<p class="text-xs text-muted-foreground">
 					Com {node.data.shardCount ?? 2} pedaços bem distribuídos, aguenta ~{(
 						node.data.capacity * (node.data.shardCount ?? 2)
-					).toLocaleString('pt-BR')} req/s. Mas se um pedaço ficar "quente" (acesso demais), ele vira
-					o gargalo: a capacidade real cai pra ~{dbEffective.toLocaleString('pt-BR')} req/s e os outros
-					ficam parados.
+					).toLocaleString('pt-BR')} req/s. Mas se um pedaço receber acessos demais, ele vira o gargalo:
+					a capacidade real cai pra ~{dbEffective.toLocaleString('pt-BR')} req/s e os outros ficam parados.
 				</p>
 			{/if}
 			<label class="flex items-center gap-2 text-sm">
