@@ -1,6 +1,14 @@
 import type { ArchNode, BrokerData } from '$lib/registry/types';
 import type { Edge } from '@xyflow/svelte';
 import { deliver, type BrokerInputs, type BrokerRuntime, type BrokerStat } from './broker';
+import {
+	amplificationOf,
+	isSyncKind,
+	queueStat,
+	MAX_LATENCY_SECONDS,
+	type SyncRuntime,
+	type SyncStat
+} from './syncqueue';
 
 /** Load level buckets, by utilization (offered / capacity). */
 export type Level = 'idle' | 'ok' | 'warn' | 'crit';
@@ -23,8 +31,10 @@ export type NodeStat = {
 	warn?: 'no-lb';
 	/** broker-only: buffer/backlog stats (the node is asynchronous and stateful) */
 	broker?: BrokerStat;
-	/** producer-only: req/s a downstream broker refused via backpressure */
+	/** producer-only: req/s a downstream broker (or saturated sync callee) refused */
 	blocked?: number;
+	/** synchronous callees only: in-flight queue depth + latency (the temporal queue) */
+	sync?: SyncStat;
 };
 
 export type EdgeStat = {
@@ -83,7 +93,8 @@ export function computeSim(
 	nodes: ArchNode[],
 	edges: Edge[],
 	capMult: Record<string, number> = {},
-	brokerState: Record<string, BrokerRuntime> = {}
+	brokerState: Record<string, BrokerRuntime> = {},
+	syncState: Record<string, SyncRuntime> = {}
 ): SimResult {
 	const byId = new Map(nodes.map((n) => [n.id, n]));
 	const poolIds = new Set(nodes.filter((n) => n.data.kind === 'pool').map((n) => n.id));
@@ -148,15 +159,18 @@ export function computeSim(
 	// Push a node's served output onto its out-edges. Every node *broadcasts* its
 	// full output to each dependency, except an API gateway, which *routes*: it
 	// splits its output across targets proportionally to their relative weights.
+	// A per-edge amplification factor scales the flow on each edge (1 caller
+	// request → N downstream calls), so the callee's offered load is inflated.
 	const emit = (n: ArchNode, sv: number) => {
 		const outs = outEdges.get(n.id) ?? [];
 		if (n.data.kind === 'api-gateway') {
 			const w = n.data.weights ?? {};
 			const weightOf = (e: Edge) => Math.max(0, w[e.target] ?? DEFAULT_GATEWAY_WEIGHT);
 			const total = outs.reduce((s, e) => s + weightOf(e), 0);
-			for (const e of outs) flow.set(e.id, total > 0 ? sv * (weightOf(e) / total) : 0);
+			for (const e of outs)
+				flow.set(e.id, (total > 0 ? sv * (weightOf(e) / total) : 0) * amplificationOf(e));
 		} else {
-			for (const e of outs) flow.set(e.id, sv);
+			for (const e of outs) flow.set(e.id, sv * amplificationOf(e));
 		}
 	};
 
@@ -297,6 +311,58 @@ export function computeSim(
 					: bucket(cap > 0 ? offered / cap : offered > 0 ? Infinity : 0),
 			cyclic: cyc
 		};
+	}
+
+	// --- Backward pass: synchronous backpressure + temporal queue ---
+	// A saturated synchronous callee holds its caller's capacity, so its inability
+	// to keep up gates the caller's throughput THIS tick (immediate — the opposite
+	// of the broker, which absorbs into a buffer and decouples). We walk the topo
+	// order in reverse so every callee's completion fraction `phi` is final before
+	// its caller is visited: a single O(V+E) pass, no iteration. Broker out-edges
+	// are skipped (publishing is async and never gates the producer); cyclic edges
+	// are skipped (best-effort, like the forward pass). `offered`/`flow` are left
+	// untouched, so every caller up the chain keeps showing offered > served — its
+	// queue grows in cascade — while `served`/`blocked`/`level` reflect the gate.
+	const phi = new Map<string, number>();
+	for (let i = order.length - 1; i >= 0; i--) {
+		const id = order[i];
+		const s = stat[id];
+		if (!s) continue;
+		const kind = byId.get(id)!.data.kind;
+
+		let gate = 1;
+		for (const e of outEdges.get(id) ?? []) {
+			const t = byId.get(e.target);
+			if (!t || !isSyncKind(t.data.kind)) continue; // async/non-callee edge
+			if (cyclic.has(e.target)) continue; // cycle: best-effort, no gate
+			const p = phi.get(e.target);
+			if (p === undefined) continue; // unresolved (cycle safety)
+			if (p < gate) gate = p;
+		}
+
+		const localServed = served.get(id) ?? s.served;
+		const gated = localServed * gate;
+		phi.set(id, s.offered > 0 ? gated / s.offered : 1);
+
+		if (gate < 1 - 1e-9) {
+			served.set(id, gated);
+			stat[id] = {
+				...s,
+				served: gated,
+				blocked: (s.blocked ?? 0) + Math.max(0, localServed - gated),
+				level: 'crit'
+			};
+		}
+
+		// Temporal queue: synchronous callees accumulate an in-flight backlog. The
+		// displayed queue comes from `syncState` (integrated frame-by-frame by the
+		// sim store, exactly like the broker backlog). Drain rate is the gated
+		// capacity, so a node throttled by its own downstream also backs up.
+		if (isSyncKind(kind) && s.capacity != null) {
+			const drainCap = s.capacity * gate;
+			const qMax = s.capacity * MAX_LATENCY_SECONDS;
+			stat[id] = { ...stat[id], sync: queueStat(syncState[id]?.queue ?? 0, drainCap, qMax) };
+		}
 	}
 
 	const edgeStats: Record<string, EdgeStat> = {};

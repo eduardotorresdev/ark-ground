@@ -2,6 +2,13 @@ import { graph } from './graph.svelte';
 import { deploy } from './deploy.svelte';
 import { bucket, computeSim, type Level, type NodeStat, type SimResult } from '$lib/sim/engine';
 import { advance, sameBacklog, type BrokerRuntime, type BrokerStat } from '$lib/sim/broker';
+import {
+	advanceQueue,
+	sameQueues,
+	MAX_LATENCY_SECONDS,
+	type SyncRuntime,
+	type SyncStat
+} from '$lib/sim/syncqueue';
 
 type Disp = { offered: number; served: number };
 
@@ -15,13 +22,15 @@ type Disp = { offered: number; served: number };
  */
 class SimStore {
 	#capMult = $state.raw<Record<string, number>>({});
-	/** Per-broker backlog, integrated each frame in the tick. The only sim state. */
+	/** Per-broker backlog, integrated each frame in the tick. */
 	#brokerState = $state.raw<Record<string, BrokerRuntime>>({});
+	/** Per-node synchronous in-flight queue, integrated each frame in the tick. */
+	#syncState = $state.raw<Record<string, SyncRuntime>>({});
 	/** Reactive frame clock (performance.now) so deploy progress bars animate. */
 	now = $state(0);
 	#lastNow = 0;
 	#result = $derived.by<SimResult>(() =>
-		computeSim(graph.nodes, graph.edges, this.#capMult, this.#brokerState)
+		computeSim(graph.nodes, graph.edges, this.#capMult, this.#brokerState, this.#syncState)
 	);
 	disp = $state<Record<string, Disp>>({});
 	#raf = 0;
@@ -37,6 +46,11 @@ class SimStore {
 	/** Broker backlog/buffer stats for a node, if it is a broker. */
 	brokerStat(id: string): BrokerStat | undefined {
 		return this.#result.nodes[id]?.broker;
+	}
+
+	/** Synchronous in-flight queue stats for a node, if it is a synchronous callee. */
+	syncStat(id: string): SyncStat | undefined {
+		return this.#result.nodes[id]?.sync;
 	}
 
 	edgeStat(id: string) {
@@ -94,6 +108,25 @@ class SimStore {
 					!sameBacklog(next, this.#brokerState)
 				)
 					this.#brokerState = next;
+
+				// Integrate synchronous in-flight queues the same way: each callee's
+				// backlog grows when its (gated) drain can't keep up with its offered
+				// load, and drains otherwise. Unlike the broker, this never feeds back
+				// into the rate — it is purely the latency/backlog the engine displays.
+				const nextSync: Record<string, SyncRuntime> = {};
+				let hasSync = false;
+				for (const id in targets) {
+					const t = targets[id];
+					if (!t.sync || t.capacity == null) continue;
+					hasSync = true;
+					const qMax = t.capacity * MAX_LATENCY_SECONDS;
+					nextSync[id] = advanceQueue(t.offered, t.sync.drainCap, qMax, this.#syncState[id], dt);
+				}
+				if (
+					(hasSync || Object.keys(this.#syncState).length) &&
+					!sameQueues(nextSync, this.#syncState)
+				)
+					this.#syncState = nextSync;
 			}
 			const next: Record<string, Disp> = {};
 			let changed = false;

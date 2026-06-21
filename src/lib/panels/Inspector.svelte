@@ -15,6 +15,7 @@
 	import { sim } from '$lib/stores/sim.svelte';
 	import { getDef } from '$lib/registry';
 	import { DEFAULT_GATEWAY_WEIGHT } from '$lib/sim/engine';
+	import { amplificationOf, isSyncKind } from '$lib/sim/syncqueue';
 	import type {
 		ArchData,
 		BrokerFullPolicy,
@@ -24,6 +25,32 @@
 	} from '$lib/registry/types';
 
 	const node = $derived(ui.selectedNode);
+
+	// Synchronous in-flight queue for the selected node (when it builds backlog).
+	const syncStat = $derived(node ? sim.syncStat(node.id) : undefined);
+
+	// Edge selection: amplification factor for synchronous call edges.
+	const selectedEdge = $derived(
+		ui.selectedEdgeId ? (graph.edges.find((e) => e.id === ui.selectedEdgeId) ?? null) : null
+	);
+	const edgeAmp = $derived(selectedEdge ? amplificationOf(selectedEdge) : 1);
+	const edgeKinds = $derived.by(() => {
+		if (!selectedEdge) return null;
+		const src = graph.nodes.find((n) => n.id === selectedEdge.source)?.data.kind;
+		const dst = graph.nodes.find((n) => n.id === selectedEdge.target)?.data.kind;
+		return src && dst ? { src, dst } : null;
+	});
+	// Amplification only makes sense for a synchronous *call*: a service/monolith/
+	// pool reaching a synchronous callee (not a broker publish, not a load source).
+	const showAmp = $derived(
+		!!edgeKinds &&
+			(edgeKinds.src === 'service' || edgeKinds.src === 'monolith' || edgeKinds.src === 'pool') &&
+			isSyncKind(edgeKinds.dst)
+	);
+	function setAmp(value: number) {
+		if (!selectedEdge) return;
+		graph.updateEdgeData(selectedEdge.id, { amplification: Math.max(1, Math.round(value)) });
+	}
 
 	// Broker: live backlog stats (per consumer in topic mode) read from the sim.
 	const brokerStat = $derived(
@@ -411,6 +438,18 @@
 			{/if}
 		{/if}
 
+		{#if syncStat && syncStat.queue > 0.5}
+			<Separator />
+			<div class="flex flex-col gap-1.5">
+				<Label>Fila síncrona</Label>
+				<p class="text-xs text-muted-foreground">
+					{Math.round(syncStat.queue).toLocaleString('pt-BR')} req em voo · latência {fmtLag(
+						syncStat.latencySeconds
+					)}
+				</p>
+			</div>
+		{/if}
+
 		{#if deployable && node}
 			<Separator />
 			<div class="flex flex-col gap-1.5">
@@ -444,6 +483,67 @@
 		<Separator />
 		<Button variant="destructive" size="sm" onclick={() => removeSelected()}>
 			{isReplica ? 'Remover réplica' : 'Remover nó'}
+		</Button>
+	{:else if selectedEdge}
+		<div class="flex items-center gap-2 text-xs text-muted-foreground">
+			<span class="rounded bg-muted px-1.5 py-0.5">Aresta</span>
+			<span class="truncate font-mono">{selectedEdge.id}</span>
+		</div>
+
+		{#if showAmp}
+			<div class="flex flex-col gap-1.5">
+				<Label for="f-amp">Amplificação (chamadas por requisição)</Label>
+				<div class="flex items-center gap-2">
+					<Button
+						variant="outline"
+						size="icon"
+						class="size-8 shrink-0"
+						aria-label="Diminuir"
+						disabled={edgeAmp <= 1}
+						onclick={() => setAmp(edgeAmp - 1)}
+					>
+						<Minus size={16} />
+					</Button>
+					<Input
+						id="f-amp"
+						type="number"
+						min="1"
+						step="1"
+						value={edgeAmp}
+						class="flex-1 text-center"
+						oninput={(e) => setAmp(num(e.currentTarget.value, 1))}
+					/>
+					<Button
+						variant="outline"
+						size="icon"
+						class="size-8 shrink-0"
+						aria-label="Aumentar"
+						onclick={() => setAmp(edgeAmp + 1)}
+					>
+						<Plus size={16} />
+					</Button>
+				</div>
+				<p class="text-xs text-muted-foreground">
+					1 requisição a montante gera {edgeAmp}
+					{edgeAmp === 1 ? 'chamada' : 'chamadas'} a jusante.
+				</p>
+			</div>
+		{:else}
+			<p class="text-xs text-muted-foreground">
+				Amplificação só se aplica a chamadas síncronas (serviço/monolito/pool → destino síncrono).
+			</p>
+		{/if}
+
+		<Separator />
+		<Button
+			variant="destructive"
+			size="sm"
+			onclick={() => {
+				graph.removeEdge(selectedEdge.id);
+				ui.clear();
+			}}
+		>
+			Remover aresta
 		</Button>
 	{:else}
 		<p class="text-sm text-muted-foreground">Selecione um nó para editar suas propriedades.</p>

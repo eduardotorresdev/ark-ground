@@ -62,6 +62,13 @@ class GraphStore {
 		this.edges = this.edges.filter((e) => e.id !== id);
 	}
 
+	/** Patch an edge's data (e.g. the call-amplification factor of a sync edge). */
+	updateEdgeData(id: string, patch: Record<string, unknown>) {
+		this.edges = this.edges.map((e) =>
+			e.id === id ? { ...e, data: { ...(e.data ?? {}), ...patch } } : e
+		);
+	}
+
 	/** Number of services reachable downstream of a gateway (expanding pools). */
 	serviceCount(gatewayId: string): number {
 		const visited = new Set<string>();

@@ -121,6 +121,68 @@ describe('validateGraph', () => {
 		expect(warnings.some((w) => w.includes('parentId'))).toBe(true);
 	});
 
+	it('keeps synchronous service↔service and service↔monolith call edges', () => {
+		const node = (id: string, kind: string, data: Record<string, unknown>) => ({
+			id,
+			type: kind,
+			position: { x: 0, y: 0 },
+			data: { kind, label: id, ...data }
+		});
+		const snap = {
+			version: 4,
+			nodes: [
+				node('service-1', 'service', { capacity: 500, version: 1 }),
+				node('service-2', 'service', { capacity: 500, version: 1 }),
+				node('monolith-1', 'monolith', { capacity: 500, version: 1, modules: [] })
+			],
+			edges: [
+				{ id: 'service-1->service-2', source: 'service-1', target: 'service-2', type: 'load' },
+				{ id: 'service-1->monolith-1', source: 'service-1', target: 'monolith-1', type: 'load' },
+				{ id: 'monolith-1->service-2', source: 'monolith-1', target: 'service-2', type: 'load' }
+			]
+		} as unknown as Snapshot;
+
+		const { edges, warnings } = validateGraph(snap);
+		expect(edges.map((e) => e.id)).toEqual([
+			'service-1->service-2',
+			'service-1->monolith-1',
+			'monolith-1->service-2'
+		]);
+		expect(warnings).toHaveLength(0);
+	});
+
+	it('sanitizes a malformed edge amplification to an integer ≥ 1', () => {
+		const snap = {
+			version: 4,
+			nodes: [
+				{
+					id: 'service-1',
+					type: 'service',
+					position: { x: 0, y: 0 },
+					data: { kind: 'service', label: 'a', capacity: 500, version: 1 }
+				},
+				{
+					id: 'service-2',
+					type: 'service',
+					position: { x: 0, y: 0 },
+					data: { kind: 'service', label: 'b', capacity: 500, version: 1 }
+				}
+			],
+			edges: [
+				{
+					id: 'service-1->service-2',
+					source: 'service-1',
+					target: 'service-2',
+					type: 'load',
+					data: { amplification: 2.7 }
+				}
+			]
+		} as unknown as Snapshot;
+
+		const { edges } = validateGraph(snap);
+		expect((edges[0].data as { amplification: number }).amplification).toBe(3);
+	});
+
 	it('passes a valid graph through with no warnings', () => {
 		const snap = {
 			version: 4,

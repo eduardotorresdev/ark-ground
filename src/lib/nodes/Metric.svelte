@@ -7,6 +7,13 @@
 	const stat = $derived(sim.nodeStat(id));
 	const disp = $derived(sim.dispOf(id));
 	const level = $derived(sim.level(id));
+
+	/** Compact seconds → "1.4s" / "12s" / "∞". */
+	function fmtLatency(s: number): string {
+		if (!(s > 0)) return '0s';
+		if (!Number.isFinite(s)) return '∞';
+		return s >= 10 ? `${Math.round(s)}s` : `${s.toFixed(1)}s`;
+	}
 </script>
 
 {#if stat && stat.capacity != null}
@@ -23,6 +30,9 @@
 		{/if}
 		{#if stat.blocked && stat.blocked > 0.5}
 			<span style:color={LEVEL_STROKE.crit}>⊘{Math.round(stat.blocked)}</span>
+		{/if}
+		{#if stat.sync && stat.sync.queue > 0.5}
+			<span style:color={LEVEL_STROKE[level]}>⏱{fmtLatency(stat.sync.latencySeconds)}</span>
 		{/if}
 	</div>
 {/if}

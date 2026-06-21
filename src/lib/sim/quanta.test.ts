@@ -74,6 +74,14 @@ describe('detectQuanta', () => {
 		expect(members(nodes, edges)).toEqual([['d', 's1', 's2']]);
 	});
 
+	it('couples a synchronous service→service call into one quantum', () => {
+		// A synchronous call binds lifecycles (backpressure propagates), so the two
+		// services are one deployable unit — unlike an async broker hop.
+		const nodes = [service('a'), service('b')];
+		const edges = [edge('a', 'b')];
+		expect(members(nodes, edges)).toEqual([['a', 'b']]);
+	});
+
 	it('keeps disconnected service+db pairs as separate quanta', () => {
 		const nodes = [service('s1'), database('d1'), service('s2'), database('d2')];
 		const edges = [edge('s1', 'd1'), edge('s2', 'd2')];

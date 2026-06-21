@@ -69,7 +69,14 @@ export function validateGraph(snapshot: Snapshot): ValidationResult {
 			);
 			continue;
 		}
-		edges.push({ ...e, type: 'load' });
+		// Sanitize a malformed amplification factor (integer ≥ 1) so a corrupt
+		// import can never inject a NaN/0 into the sim's edge flows.
+		const amp = (e.data as { amplification?: unknown } | undefined)?.amplification;
+		const data =
+			amp == null
+				? e.data
+				: { ...e.data, amplification: Math.max(1, Math.round(Number(amp)) || 1) };
+		edges.push({ ...e, data, type: 'load' });
 	}
 
 	return { nodes, edges, warnings };

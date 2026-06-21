@@ -57,6 +57,19 @@ const edge = (source: string, target: string): Edge => ({
 	source,
 	target
 });
+const monolith = (id: string, capacity: number): ArchNode => ({
+	id,
+	type: 'monolith',
+	position: at,
+	data: { kind: 'monolith', label: id, capacity, version: 1, modules: [] }
+});
+/** An edge carrying a call-amplification factor (N downstream calls per request). */
+const ampEdge = (source: string, target: string, amplification: number): Edge => ({
+	id: `${source}->${target}`,
+	source,
+	target,
+	data: { amplification }
+});
 
 describe('bucket', () => {
 	it('maps utilization to the agreed thresholds', () => {
@@ -228,5 +241,143 @@ describe('cycles', () => {
 		const { nodes: stat } = computeSim(nodes, edges);
 		expect(stat.a.cyclic).toBe(true);
 		expect(stat.b.cyclic).toBe(true);
+	});
+
+	it('keeps a cyclic chain finite (gate stays 1 through the cycle)', () => {
+		const nodes = [load('g', 200), service('a', 500), service('b', 500)];
+		const edges = [edge('g', 'a'), edge('a', 'b'), edge('b', 'a')];
+		const { nodes: stat } = computeSim(nodes, edges);
+		expect(Number.isFinite(stat.a.served)).toBe(true);
+		expect(Number.isFinite(stat.b.served)).toBe(true);
+	});
+});
+
+describe('synchronous service-to-service backpressure', () => {
+	it('cascades upstream: a saturated leaf throttles the whole chain', () => {
+		// A → B → C, C is the bottleneck (cap 300). Its saturation gates B and A.
+		const nodes = [load('g', 1000), service('a', 1000), service('b', 1000), service('c', 300)];
+		const edges = [edge('g', 'a'), edge('a', 'b'), edge('b', 'c')];
+		const { nodes: stat } = computeSim(nodes, edges);
+
+		expect(stat.c.served).toBe(300);
+		expect(stat.c.dropped).toBe(700);
+		// B's own capacity is 1000, yet it can only *complete* 300 because C gates it.
+		expect(stat.b.served).toBe(300);
+		expect(stat.b.blocked).toBe(700);
+		expect(stat.b.level).toBe('crit');
+		// The gate reaches all the way to A.
+		expect(stat.a.served).toBe(300);
+		expect(stat.a.blocked).toBe(700);
+		expect(stat.a.level).toBe('crit');
+	});
+
+	it('regression: without the saturated callee, the caller is not gated', () => {
+		const nodes = [load('g', 1000), service('a', 1000), service('b', 1000)];
+		const edges = [edge('g', 'a'), edge('a', 'b')];
+		const { nodes: stat } = computeSim(nodes, edges);
+		expect(stat.b.served).toBe(1000);
+		expect(stat.a.served).toBe(1000);
+		expect(stat.a.blocked ?? 0).toBe(0);
+	});
+
+	it('branching: the caller is gated by its slowest callee (min)', () => {
+		// A fans out to B (fast) and C (slow). A awaits both, so C's 0.4 fraction wins.
+		const nodes = [load('g', 500), service('a', 5000), service('b', 1000), service('c', 200)];
+		const edges = [edge('g', 'a'), edge('a', 'b'), edge('a', 'c')];
+		const { nodes: stat } = computeSim(nodes, edges);
+
+		expect(stat.c.served).toBe(200); // 500 offered, cap 200
+		expect(stat.b.served).toBe(500); // keeps up
+		expect(stat.a.served).toBe(200); // gated by C: 500 · min(1, 0.4)
+		expect(stat.a.level).toBe('crit');
+	});
+
+	it('amplification: one request generates N downstream calls', () => {
+		// A serves 100, each request makes 5 calls to B → B is offered 500.
+		const nodes = [load('g', 100), service('a', 1000), service('b', 300)];
+		const edges = [edge('g', 'a'), ampEdge('a', 'b', 5)];
+		const { nodes: stat } = computeSim(nodes, edges);
+
+		expect(stat.b.offered).toBe(500);
+		expect(stat.b.served).toBe(300);
+		expect(stat.b.dropped).toBe(200);
+		// B completes 0.6 of its load, gating A: 100 · 0.6.
+		expect(stat.a.served).toBe(60);
+		expect(stat.a.blocked).toBe(40);
+	});
+
+	it('works through a monolith callee (service ↔ monolith)', () => {
+		const nodes = [load('g', 800), service('a', 2000), monolith('m', 300)];
+		const edges = [edge('g', 'a'), edge('a', 'm')];
+		const { nodes: stat } = computeSim(nodes, edges);
+		expect(stat.m.served).toBe(300);
+		expect(stat.a.served).toBe(300); // gated by the monolith
+		expect(stat.a.level).toBe('crit');
+	});
+
+	it('exposes a sync drain capacity for the temporal queue', () => {
+		const nodes = [load('g', 1000), service('a', 1000), service('c', 300)];
+		const edges = [edge('g', 'a'), edge('a', 'c')];
+		const { nodes: stat } = computeSim(nodes, edges);
+		// C drains at its full capacity; A's drain is gated to C's throughput.
+		expect(stat.c.sync?.drainCap).toBe(300);
+		expect(stat.a.sync?.drainCap).toBeCloseTo(300, 5); // 1000 · gate 0.3
+	});
+});
+
+describe('broker edges do NOT cascade (async contrast)', () => {
+	it('a slow consumer behind a broker never gates the producer', () => {
+		const nodes = [load('g', 1000), service('p', 5000), broker('mq'), service('c', 300)];
+		const edges = [edge('g', 'p'), edge('p', 'mq'), edge('mq', 'c')];
+		const { nodes: stat } = computeSim(nodes, edges);
+
+		expect(stat.p.served).toBe(1000); // publisher unaffected — the broker decouples
+		expect(stat.p.blocked ?? 0).toBe(0); // not gated by the slow consumer
+		expect(stat.p.sync?.queue).toBe(0); // no in-flight backlog builds on the producer
+	});
+});
+
+describe('multiple independent databases', () => {
+	it('tracks each database in isolation, with no shared limit', () => {
+		const nodes = [
+			load('g1', 300),
+			service('s1', 1000),
+			database('dbA', 5000),
+			load('g2', 200),
+			service('s2', 1000),
+			database('dbB', 5000)
+		];
+		const edges = [edge('g1', 's1'), edge('s1', 'dbA'), edge('g2', 's2'), edge('s2', 'dbB')];
+		const { nodes: stat } = computeSim(nodes, edges);
+
+		expect(stat.dbA.offered).toBe(300);
+		expect(stat.dbA.served).toBe(300);
+		expect(stat.dbB.offered).toBe(200);
+		expect(stat.dbB.served).toBe(200);
+	});
+
+	it('a saturated database back-pressures only its own caller, not other DBs', () => {
+		// Pair 1: dbA is the bottleneck (cap 300) and gates s1.
+		// Pair 2: fully healthy and must stay untouched.
+		const nodes = [
+			load('g1', 1000),
+			service('s1', 5000),
+			database('dbA', 300),
+			load('g2', 100),
+			service('s2', 5000),
+			database('dbB', 5000)
+		];
+		const edges = [edge('g1', 's1'), edge('s1', 'dbA'), edge('g2', 's2'), edge('s2', 'dbB')];
+		const { nodes: stat } = computeSim(nodes, edges);
+
+		expect(stat.dbA.served).toBe(300);
+		expect(stat.s1.served).toBe(300); // gated by dbA
+		expect(stat.s1.level).toBe('crit');
+		// The other pair is wholly independent — no leakage.
+		expect(stat.dbB.offered).toBe(100);
+		expect(stat.dbB.served).toBe(100);
+		expect(stat.s2.served).toBe(100);
+		expect(stat.s2.blocked ?? 0).toBe(0);
+		expect(stat.s2.level).not.toBe('crit');
 	});
 });

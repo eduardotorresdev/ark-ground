@@ -20,6 +20,14 @@ export type Module = { id: string; label: string };
 
 export type PortDir = 'in' | 'out';
 
+/**
+ * Optional per-edge data. `amplification` is the call fan-out of a synchronous
+ * edge: 1 caller request → N downstream calls (integer ≥ 1, default 1). Edges are
+ * typed loosely by @xyflow/svelte, so this is documentation + a typed accessor
+ * shape, not an enforced schema.
+ */
+export type LoadEdgeData = { amplification?: number };
+
 export type PortSpec = {
 	id: string;
 	dir: PortDir;
