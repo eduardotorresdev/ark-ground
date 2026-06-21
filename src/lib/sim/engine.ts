@@ -1,6 +1,7 @@
-import type { ArchNode, BrokerData } from '$lib/registry/types';
+import type { ArchNode, BrokerData, CacheData } from '$lib/registry/types';
 import type { Edge } from '@xyflow/svelte';
 import { deliver, type BrokerInputs, type BrokerRuntime, type BrokerStat } from './broker';
+import { initialWarmth, type CacheRuntime, type CacheStat } from './cache';
 import {
 	amplificationOf,
 	isSyncKind,
@@ -31,6 +32,8 @@ export type NodeStat = {
 	warn?: 'no-lb';
 	/** broker-only: buffer/backlog stats (the node is asynchronous and stateful) */
 	broker?: BrokerStat;
+	/** cache-only: hit/miss rates, effective hit ratio and temporal warmth */
+	cache?: CacheStat;
 	/** producer-only: req/s a downstream broker (or saturated sync callee) refused */
 	blocked?: number;
 	/** synchronous callees only: in-flight queue depth + latency (the temporal queue) */
@@ -72,6 +75,7 @@ function capacityOf(n: ArchNode): number | null {
 	if (d.kind === 'service' || d.kind === 'database' || d.kind === 'api-gateway') return d.capacity;
 	if (d.kind === 'load-balancer') return d.capacity;
 	if (d.kind === 'monolith') return d.capacity;
+	if (d.kind === 'cache') return d.capacity;
 	return null;
 }
 
@@ -94,7 +98,8 @@ export function computeSim(
 	edges: Edge[],
 	capMult: Record<string, number> = {},
 	brokerState: Record<string, BrokerRuntime> = {},
-	syncState: Record<string, SyncRuntime> = {}
+	syncState: Record<string, SyncRuntime> = {},
+	cacheState: Record<string, CacheRuntime> = {}
 ): SimResult {
 	const byId = new Map(nodes.map((n) => [n.id, n]));
 	const poolIds = new Set(nodes.filter((n) => n.data.kind === 'pool').map((n) => n.id));
@@ -290,6 +295,33 @@ export function computeSim(
 			continue;
 		}
 
+		if (kind === 'cache') {
+			const d = n.data as CacheData;
+			const cap = d.capacity * (capMult[id] ?? 1);
+			const sv = Math.min(offered, cap);
+			const warmth = cacheState[id]?.warmth ?? initialWarmth(d.ttlSeconds);
+			const effHit = Math.max(0, Math.min(1, d.hitRatio)) * warmth;
+			const hits = sv * effHit;
+			const misses = sv - hits;
+			served.set(id, sv);
+			// Emit only the miss fraction downstream (× per-edge amplification): the
+			// hit fraction is answered here, so the backing's offered load drops in
+			// proportion to the effective hit ratio. Don't use the broadcast `emit`.
+			for (const e of outEdges.get(id) ?? []) flow.set(e.id, misses * amplificationOf(e));
+			const util = cap > 0 ? offered / cap : offered > 0 ? Infinity : 0;
+			stat[id] = {
+				offered,
+				served: sv,
+				capacity: cap,
+				util,
+				dropped: Math.max(0, offered - sv),
+				level: bucket(util),
+				cyclic: cyc,
+				cache: { hits, misses, hitRatio: effHit, warmth }
+			};
+			continue;
+		}
+
 		// service / database / api-gateway / load-balancer / monolith
 		const baseCap = capacityOf(n);
 		const cap = baseCap == null ? null : baseCap * (capMult[id] ?? 1);
@@ -341,7 +373,20 @@ export function computeSim(
 		}
 
 		const localServed = served.get(id) ?? s.served;
-		const gated = localServed * gate;
+		let gated: number;
+		let refused: number; // throughput lost to the gate, charged back as `blocked`
+		if (kind === 'cache') {
+			// Hits are answered locally and never reach the backing, so a saturated
+			// backing only throttles the miss fraction — a warm cache keeps serving
+			// even when the node behind it is down.
+			const effHit = s.cache?.hitRatio ?? 0;
+			const misses = localServed * (1 - effHit);
+			gated = localServed - misses * (1 - gate);
+			refused = misses * (1 - gate);
+		} else {
+			gated = localServed * gate;
+			refused = localServed - gated;
+		}
 		phi.set(id, s.offered > 0 ? gated / s.offered : 1);
 
 		if (gate < 1 - 1e-9) {
@@ -349,7 +394,7 @@ export function computeSim(
 			stat[id] = {
 				...s,
 				served: gated,
-				blocked: (s.blocked ?? 0) + Math.max(0, localServed - gated),
+				blocked: (s.blocked ?? 0) + Math.max(0, refused),
 				level: 'crit'
 			};
 		}

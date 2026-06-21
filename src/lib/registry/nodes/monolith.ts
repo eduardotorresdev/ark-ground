@@ -1,5 +1,4 @@
 import Boxes from '@lucide/svelte/icons/boxes';
-import MonolithNode from '$lib/nodes/MonolithNode.svelte';
 import type { NodeDef } from '../types';
 
 /**
@@ -16,8 +15,7 @@ export const monolithDef: NodeDef<'monolith'> = {
 	accent: 'border-fuchsia-300 bg-fuchsia-50 text-fuchsia-700',
 	ports: [
 		{ id: 'in', dir: 'in' },
-		{ id: 'out', dir: 'out', accepts: ['database', 'service', 'broker'] }
+		{ id: 'out', dir: 'out', accepts: ['database', 'service', 'broker', 'cache'] }
 	],
-	component: MonolithNode,
 	create: () => ({ label: 'Monolito', capacity: 900, version: 1, modules: [] })
 };

@@ -1,5 +1,5 @@
 import type { Component } from 'svelte';
-import type { Node, NodeProps } from '@xyflow/svelte';
+import type { Node } from '@xyflow/svelte';
 
 /** Every architecture component kind. Add new kinds here. */
 export type NodeKind =
@@ -10,7 +10,8 @@ export type NodeKind =
 	| 'load-balancer'
 	| 'pool'
 	| 'monolith'
-	| 'broker';
+	| 'broker'
+	| 'cache';
 
 /** Deploy strategies, in order of increasing safety. */
 export type DeployStrategy = 'recreate' | 'blue-green' | 'rolling';
@@ -152,6 +153,31 @@ export type BrokerData = {
 	fullPolicy: BrokerFullPolicy;
 };
 
+/**
+ * Read-through cache fronting a downstream backing node. Of the load it serves,
+ * the *hit* fraction is answered immediately (never forwarded), and only the
+ * *miss* fraction is emitted to the backing — so the node behind it sees its
+ * offered load reduced proportionally to the effective hit ratio.
+ *
+ * Like every synchronous node it has its own `capacity` (req/s) and can saturate
+ * on its own under high load. The effective hit ratio is `hitRatio` modulated by
+ * a temporal "warmth" in [0, 1]: with `ttlSeconds > 0` the cache starts cold and
+ * warms up as traffic populates it (time constant ~TTL), and entries expire when
+ * traffic subsides — so it can visibly go cold → warming → healthy. With
+ * `ttlSeconds = 0` warmth is pinned to 1 (a constant hit ratio). The warmth is
+ * integrated frame-by-frame in the sim store, like the broker backlog.
+ */
+export type CacheData = {
+	kind: 'cache';
+	label: string;
+	/** requests/second this cache can serve (hits + misses) before saturating */
+	capacity: number;
+	/** target hit ratio in [0, 1] (the warm, steady-state fraction of hits) */
+	hitRatio: number;
+	/** entry time-to-live in seconds; drives the warmth ramp. 0 = always warm */
+	ttlSeconds: number;
+};
+
 /** Discriminated union over `kind`. */
 export type ArchData =
 	| ServiceData
@@ -161,7 +187,8 @@ export type ArchData =
 	| LoadBalancerData
 	| PoolData
 	| MonolithData
-	| BrokerData;
+	| BrokerData
+	| CacheData;
 
 /** A node on the canvas, typed with our domain data. */
 export type ArchNode = Node<ArchData>;
@@ -182,8 +209,6 @@ export type NodeDef<K extends NodeKind = NodeKind> = {
 	accent: string;
 	/** connection ports */
 	ports: PortSpec[];
-	/** svelte component rendered on the canvas */
-	component: Component<NodeProps>;
 	/** default data (minus the discriminant) applied when dropped */
 	create: () => Omit<DataOf<K>, 'kind'>;
 	/** hide from the palette (e.g. pools, which are created by duplicating) */

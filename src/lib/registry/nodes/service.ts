@@ -1,5 +1,4 @@
 import Server from '@lucide/svelte/icons/server';
-import ServiceNode from '$lib/nodes/ServiceNode.svelte';
 import type { NodeDef } from '../types';
 
 export const serviceDef: NodeDef<'service'> = {
@@ -12,6 +11,5 @@ export const serviceDef: NodeDef<'service'> = {
 		{ id: 'in', dir: 'in' },
 		{ id: 'out', dir: 'out' }
 	],
-	component: ServiceNode,
 	create: () => ({ label: 'Serviço', capacity: 500, version: 1 })
 };

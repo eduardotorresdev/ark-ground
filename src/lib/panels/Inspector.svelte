@@ -56,6 +56,8 @@
 	const brokerStat = $derived(
 		node?.data.kind === 'broker' ? sim.nodeStat(node.id)?.broker : undefined
 	);
+	// Cache: live hit/miss/warmth stats read from the sim.
+	const cacheStat = $derived(node?.data.kind === 'cache' ? sim.cacheStat(node.id) : undefined);
 	function consumerLabel(consumerId: string): string {
 		return graph.nodes.find((n) => n.id === consumerId)?.data.label ?? consumerId;
 	}
@@ -434,6 +436,56 @@
 					{:else}
 						<p class="text-xs text-muted-foreground">Conecte consumidores para ver o lag.</p>
 					{/if}
+				</div>
+			{/if}
+		{:else if node.data.kind === 'cache'}
+			{@render scale('f-cap', 'Capacidade (req/s)', node.data.capacity, 'capacity', 100000, 500)}
+			<div class="flex flex-col gap-1.5">
+				<Label for="f-hit">Hit ratio</Label>
+				<div class="flex items-center gap-2">
+					<input
+						type="range"
+						id="f-hit"
+						min="0"
+						max="100"
+						step="1"
+						value={Math.round(node.data.hitRatio * 100)}
+						class="flex-1"
+						oninput={(e) =>
+							graph.updateData(node.id, { hitRatio: num(e.currentTarget.value, 0) / 100 })}
+					/>
+					<span class="w-10 text-right text-xs tabular-nums text-muted-foreground">
+						{Math.round(node.data.hitRatio * 100)}%
+					</span>
+				</div>
+				<p class="text-xs text-muted-foreground">
+					Fração da carga servida pelo cache (hit). O resto (miss) vai ao backing a jusante.
+				</p>
+			</div>
+			{@render scale(
+				'f-ttl',
+				'TTL (s) · 0 = sempre quente',
+				node.data.ttlSeconds,
+				'ttlSeconds',
+				600,
+				5
+			)}
+			{#if node.data.ttlSeconds > 0}
+				<p class="text-xs text-muted-foreground">
+					Com TTL &gt; 0 o cache começa frio e aquece com a carga (constante de tempo ~TTL),
+					modulando o hit ratio efetivo ao longo do tempo.
+				</p>
+			{/if}
+			{#if cacheStat}
+				<Separator />
+				<div class="flex flex-col gap-1.5">
+					<Label>Hit / miss</Label>
+					<p class="text-xs text-muted-foreground tabular-nums">
+						{Math.round(cacheStat.hits).toLocaleString('pt-BR')} hit/s · {Math.round(
+							cacheStat.misses
+						).toLocaleString('pt-BR')} miss/s · hit efetivo {Math.round(cacheStat.hitRatio * 100)}%
+						(warmth {Math.round(cacheStat.warmth * 100)}%)
+					</p>
 				</div>
 			{/if}
 		{/if}

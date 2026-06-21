@@ -54,7 +54,8 @@ export function isSyncKind(kind: NodeKind): boolean {
 		kind === 'database' ||
 		kind === 'pool' ||
 		kind === 'api-gateway' ||
-		kind === 'load-balancer'
+		kind === 'load-balancer' ||
+		kind === 'cache'
 	);
 }
 

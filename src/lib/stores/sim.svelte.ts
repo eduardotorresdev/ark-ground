@@ -2,6 +2,7 @@ import { graph } from './graph.svelte';
 import { deploy } from './deploy.svelte';
 import { bucket, computeSim, type Level, type NodeStat, type SimResult } from '$lib/sim/engine';
 import { advance, sameBacklog, type BrokerRuntime, type BrokerStat } from '$lib/sim/broker';
+import { advanceWarmth, sameCache, type CacheRuntime, type CacheStat } from '$lib/sim/cache';
 import {
 	advanceQueue,
 	sameQueues,
@@ -26,11 +27,20 @@ class SimStore {
 	#brokerState = $state.raw<Record<string, BrokerRuntime>>({});
 	/** Per-node synchronous in-flight queue, integrated each frame in the tick. */
 	#syncState = $state.raw<Record<string, SyncRuntime>>({});
+	/** Per-cache warmth in [0, 1], integrated each frame in the tick. */
+	#cacheState = $state.raw<Record<string, CacheRuntime>>({});
 	/** Reactive frame clock (performance.now) so deploy progress bars animate. */
 	now = $state(0);
 	#lastNow = 0;
 	#result = $derived.by<SimResult>(() =>
-		computeSim(graph.nodes, graph.edges, this.#capMult, this.#brokerState, this.#syncState)
+		computeSim(
+			graph.nodes,
+			graph.edges,
+			this.#capMult,
+			this.#brokerState,
+			this.#syncState,
+			this.#cacheState
+		)
 	);
 	disp = $state<Record<string, Disp>>({});
 	#raf = 0;
@@ -51,6 +61,11 @@ class SimStore {
 	/** Synchronous in-flight queue stats for a node, if it is a synchronous callee. */
 	syncStat(id: string): SyncStat | undefined {
 		return this.#result.nodes[id]?.sync;
+	}
+
+	/** Hit/miss/warmth stats for a node, if it is a cache. */
+	cacheStat(id: string): CacheStat | undefined {
+		return this.#result.nodes[id]?.cache;
 	}
 
 	edgeStat(id: string) {
@@ -127,6 +142,23 @@ class SimStore {
 					!sameQueues(nextSync, this.#syncState)
 				)
 					this.#syncState = nextSync;
+
+				// Integrate cache warmth: it climbs toward 1 while the cache receives
+				// load and decays toward 0 when idle, with the cache's TTL as the time
+				// constant. The next computeSim reads it to scale the hit ratio.
+				const nextCache: Record<string, CacheRuntime> = {};
+				let hasCache = false;
+				for (const n of graph.nodes) {
+					if (n.data.kind !== 'cache') continue;
+					hasCache = true;
+					const offered = targets[n.id]?.offered ?? 0;
+					nextCache[n.id] = advanceWarmth(offered, n.data.ttlSeconds, this.#cacheState[n.id], dt);
+				}
+				if (
+					(hasCache || Object.keys(this.#cacheState).length) &&
+					!sameCache(nextCache, this.#cacheState)
+				)
+					this.#cacheState = nextCache;
 			}
 			const next: Record<string, Disp> = {};
 			let changed = false;

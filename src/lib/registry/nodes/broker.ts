@@ -1,5 +1,4 @@
 import Inbox from '@lucide/svelte/icons/inbox';
-import BrokerNode from '$lib/nodes/BrokerNode.svelte';
 import type { NodeDef } from '../types';
 
 /**
@@ -18,7 +17,6 @@ export const brokerDef: NodeDef<'broker'> = {
 		{ id: 'in', dir: 'in', accepts: ['load', 'service', 'monolith'] },
 		{ id: 'out', dir: 'out', accepts: ['service', 'monolith', 'load-balancer'] }
 	],
-	component: BrokerNode,
 	create: () => ({
 		label: 'Mensageria',
 		mode: 'work-queue',
