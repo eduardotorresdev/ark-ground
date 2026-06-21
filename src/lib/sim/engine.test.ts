@@ -152,6 +152,55 @@ describe('load balancer split', () => {
 	});
 });
 
+describe('load balancer direct split (no pool)', () => {
+	it('round-robin splits the load evenly across the services', () => {
+		const nodes = [load('g', 500), lb('lb', 'round-robin'), service('a', 500), service('b', 500)];
+		const edges = [edge('g', 'lb'), edge('lb', 'a'), edge('lb', 'b')];
+		const { nodes: stat, edges: estat } = computeSim(nodes, edges);
+
+		expect(stat.a.offered).toBe(250);
+		expect(stat.b.offered).toBe(250);
+		expect(stat.a.served).toBe(250);
+		expect(stat.b.served).toBe(250);
+		expect(estat['lb->a'].load).toBe(250);
+		expect(estat['lb->b'].load).toBe(250);
+	});
+
+	it('least-connections rebalances progressively as services are added', () => {
+		const two = computeSim(
+			[load('g', 500), lb('lb', 'least-connections'), service('a', 500), service('b', 500)],
+			[edge('g', 'lb'), edge('lb', 'a'), edge('lb', 'b')]
+		).nodes;
+		expect(two.a.offered).toBe(250);
+		expect(two.b.offered).toBe(250);
+
+		const three = computeSim(
+			[
+				load('g', 500),
+				lb('lb', 'least-connections'),
+				service('a', 500),
+				service('b', 500),
+				service('c', 500)
+			],
+			[edge('g', 'lb'), edge('lb', 'a'), edge('lb', 'b'), edge('lb', 'c')]
+		).nodes;
+		expect(three.a.offered).toBeCloseTo(500 / 3);
+		expect(three.b.offered).toBeCloseTo(500 / 3);
+		expect(three.c.offered).toBeCloseTo(500 / 3);
+	});
+
+	it('weighted/least-connections splits by service capacity', () => {
+		const nodes = [load('g', 600), lb('lb', 'weighted'), service('a', 400), service('b', 200)];
+		const edges = [edge('g', 'lb'), edge('lb', 'a'), edge('lb', 'b')];
+		const { nodes: stat } = computeSim(nodes, edges);
+
+		expect(stat.a.offered).toBe(400);
+		expect(stat.b.offered).toBe(200);
+		expect(stat.a.dropped).toBe(0);
+		expect(stat.b.dropped).toBe(0);
+	});
+});
+
 describe('api gateway routing', () => {
 	it('splits load across targets proportionally to their weights', () => {
 		const nodes = [
