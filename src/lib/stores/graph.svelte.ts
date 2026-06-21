@@ -1,6 +1,7 @@
 import { addEdge, type Connection, type Edge } from '@xyflow/svelte';
 import { getDef } from '$lib/registry';
 import type { ArchData, ArchNode, NodeKind } from '$lib/registry/types';
+import { remapIds, boundsOf, offsetPositions } from '$lib/presets/remap';
 
 // Pool layout geometry (pixels). Replicas stack vertically (flex-col); the
 // wrapper grows in height with the number of children.
@@ -8,6 +9,8 @@ const CHILD_W = 168;
 const CHILD_H = 84; // real rendered replica-card height (~81px) + breathing room
 const GAP = 16;
 const PAD = 16;
+// Horizontal gap inserted between the existing graph and a merged-in preset.
+const MERGE_GAP = 120;
 const HEADER = 98; // 3-row header (~82px) + a GAP of breathing room before row 1
 
 function poolSize(count: number) {
@@ -224,8 +227,7 @@ class GraphStore {
 	/** Set the per-replica capacity on a pool; every child inherits the value. */
 	setPoolCapacity(poolId: string, capacity: number) {
 		this.nodes = this.nodes.map((n) => {
-			if (n.id === poolId && n.data.kind === 'pool')
-				return { ...n, data: { ...n.data, capacity } };
+			if (n.id === poolId && n.data.kind === 'pool') return { ...n, data: { ...n.data, capacity } };
 			if (n.parentId === poolId && (n.data.kind === 'service' || n.data.kind === 'monolith'))
 				return { ...n, data: { ...n.data, capacity } };
 			return n;
@@ -389,8 +391,7 @@ class GraphStore {
 		if (mono?.data.kind !== 'monolith' || mono.data.modules.length < 2) return null;
 
 		const dbEdge = this.edges.find(
-			(e) =>
-				e.source === id && this.nodes.find((n) => n.id === e.target)?.data.kind === 'database'
+			(e) => e.source === id && this.nodes.find((n) => n.id === e.target)?.data.kind === 'database'
 		);
 		const db = dbEdge ? this.nodes.find((n) => n.id === dbEdge.target) : null;
 
@@ -461,7 +462,10 @@ class GraphStore {
 		const dbIds = new Set<string>();
 		for (const s of services)
 			for (const e of this.edges)
-				if (e.source === s.id && this.nodes.find((n) => n.id === e.target)?.data.kind === 'database')
+				if (
+					e.source === s.id &&
+					this.nodes.find((n) => n.id === e.target)?.data.kind === 'database'
+				)
 					dbIds.add(e.target);
 		const dbList = [...dbIds];
 		const sharedDb = dbList[0] ?? null;
@@ -490,8 +494,14 @@ class GraphStore {
 
 		const newEdges: Edge[] = [];
 		if (sharedDb)
-			newEdges.push({ id: `e-${monoId}-${sharedDb}`, source: monoId, target: sharedDb, type: 'load' });
-		if (!removeGw) newEdges.push({ id: `e-${gwId}-${monoId}`, source: gwId, target: monoId, type: 'load' });
+			newEdges.push({
+				id: `e-${monoId}-${sharedDb}`,
+				source: monoId,
+				target: sharedDb,
+				type: 'load'
+			});
+		if (!removeGw)
+			newEdges.push({ id: `e-${gwId}-${monoId}`, source: gwId, target: monoId, type: 'load' });
 
 		const edgesKept = this.edges
 			.filter((e) => !selSet.has(e.source) && !selSet.has(e.target))
@@ -518,6 +528,32 @@ class GraphStore {
 			const m = /-(\d+)$/.exec(n.id);
 			if (m) this.#seq = Math.max(this.#seq, Number(m[1]));
 		}
+		this.#normalizePools();
+	}
+
+	/**
+	 * Add a graph (e.g. a preset recipe) onto the current canvas. Ids are remapped
+	 * to fresh ones (rewiring edges, parentId and gateway weights) so nothing
+	 * collides, and the incoming nodes are shifted to sit just right of what's
+	 * already there. Reuses the same pool normalization as {@link load}.
+	 */
+	merge(snapshot: { nodes: ArchNode[]; edges: Edge[] }) {
+		const { snapshot: remapped } = remapIds(
+			{ version: 0, nodes: snapshot.nodes ?? [], edges: snapshot.edges ?? [] },
+			(k) => this.#id(k)
+		);
+		const cur = boundsOf(this.nodes);
+		const incoming = boundsOf(remapped.nodes);
+		let placed = remapped.nodes;
+		if (cur && incoming) {
+			placed = offsetPositions(
+				remapped.nodes,
+				cur.maxX + MERGE_GAP - incoming.minX,
+				cur.minY - incoming.minY
+			);
+		}
+		this.nodes = [...this.nodes, ...placed];
+		this.edges = [...this.edges, ...remapped.edges];
 		this.#normalizePools();
 	}
 

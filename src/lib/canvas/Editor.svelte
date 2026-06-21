@@ -14,11 +14,20 @@
 	import DeployHud from './DeployHud.svelte';
 	import { graph } from '$lib/stores/graph.svelte';
 	import { ui } from '$lib/stores/ui.svelte';
+	import { history } from '$lib/stores/history.svelte';
 	import { canConnect } from '$lib/registry';
 	import { DND_MIME } from '$lib/canvas/dnd';
 	import type { NodeKind } from '$lib/registry/types';
+	// side-effect import: exposes window.__presets in dev
+	import { registerFlow } from '$lib/presets';
+	import { onMount } from 'svelte';
 
-	const { screenToFlowPosition } = useSvelteFlow();
+	const flow = useSvelteFlow();
+	const { screenToFlowPosition } = flow;
+
+	onMount(() => {
+		registerFlow({ setViewport: flow.setViewport, fitView: flow.fitView });
+	});
 
 	function onDrop(event: DragEvent) {
 		event.preventDefault();
@@ -44,6 +53,15 @@
 
 	function onKeydown(event: KeyboardEvent) {
 		if (isEditing(event.target)) return;
+
+		// ⌘/Ctrl + Z → undo; ⌘/Ctrl + Shift + Z → redo.
+		if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
+			event.preventDefault();
+			if (event.shiftKey) history.redo();
+			else history.undo();
+			ui.clear();
+			return;
+		}
 
 		// ⌘/Ctrl + D → duplicate the selected service or monolith (creates a pool).
 		if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'd') {

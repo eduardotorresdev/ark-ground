@@ -6,13 +6,18 @@
 	import Inspector from '$lib/panels/Inspector.svelte';
 	import Editor from '$lib/canvas/Editor.svelte';
 	import { startAutosave } from '$lib/persistence/storage.svelte';
+	import { startHistory } from '$lib/stores/history.svelte';
 	import { sim } from '$lib/stores/sim.svelte';
 
 	onMount(() => {
 		const stopSave = startAutosave();
+		// start history after the saved diagram is loaded, so the initial
+		// snapshot is the restored graph rather than an empty canvas.
+		const stopHistory = startHistory();
 		const stopSim = sim.start();
 		return () => {
 			stopSave();
+			stopHistory();
 			stopSim();
 		};
 	});

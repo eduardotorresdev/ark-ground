@@ -6,8 +6,11 @@
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import BoxSelect from '@lucide/svelte/icons/box-select';
 	import Boxes from '@lucide/svelte/icons/boxes';
+	import Undo2 from '@lucide/svelte/icons/undo-2';
+	import Redo2 from '@lucide/svelte/icons/redo-2';
 	import { graph } from '$lib/stores/graph.svelte';
 	import { ui } from '$lib/stores/ui.svelte';
+	import { history } from '$lib/stores/history.svelte';
 	import { LEVEL_STROKE } from '$lib/sim/engine';
 	import { download, importFile } from '$lib/persistence/storage.svelte';
 
@@ -60,6 +63,27 @@
 	{/if}
 
 	<div class="ml-auto flex items-center gap-2">
+		<Button
+			variant="outline"
+			size="sm"
+			onclick={() => history.undo()}
+			disabled={!history.canUndo}
+			title="Desfazer (⌘/Ctrl+Z)"
+			aria-label="Desfazer"
+		>
+			<Undo2 size={16} />
+		</Button>
+		<Button
+			variant="outline"
+			size="sm"
+			onclick={() => history.redo()}
+			disabled={!history.canRedo}
+			title="Refazer (⌘/Ctrl+Shift+Z)"
+			aria-label="Refazer"
+		>
+			<Redo2 size={16} />
+		</Button>
+		<Separator orientation="vertical" class="h-5" />
 		<Button
 			variant={ui.showQuanta ? 'default' : 'outline'}
 			size="sm"
