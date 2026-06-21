@@ -1,5 +1,4 @@
 import Layers from '@lucide/svelte/icons/layers';
-import PoolNode from '$lib/nodes/PoolNode.svelte';
 import type { NodeDef } from '../types';
 
 /**
@@ -18,6 +17,5 @@ export const poolDef: NodeDef<'pool'> = {
 		{ id: 'in', dir: 'in', accepts: ['load-balancer'] },
 		{ id: 'out', dir: 'out' }
 	],
-	component: PoolNode,
 	create: () => ({ label: 'Pool', capacity: 500, version: 1 })
 };

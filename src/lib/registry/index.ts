@@ -7,6 +7,7 @@ import { loadBalancerDef } from './nodes/load-balancer';
 import { poolDef } from './nodes/pool';
 import { monolithDef } from './nodes/monolith';
 import { brokerDef } from './nodes/broker';
+import { cacheDef } from './nodes/cache';
 
 /** Central registry: kind -> definition. Add new kinds here and in NodeKind. */
 export const registry: Record<NodeKind, NodeDef> = {
@@ -17,6 +18,7 @@ export const registry: Record<NodeKind, NodeDef> = {
 	service: serviceDef,
 	monolith: monolithDef,
 	pool: poolDef,
+	cache: cacheDef,
 	database: databaseDef
 };
 

@@ -1,5 +1,4 @@
 import Zap from '@lucide/svelte/icons/zap';
-import LoadNode from '$lib/nodes/LoadNode.svelte';
 import type { NodeDef } from '../types';
 
 export const loadDef: NodeDef<'load'> = {
@@ -12,9 +11,8 @@ export const loadDef: NodeDef<'load'> = {
 		{
 			id: 'out',
 			dir: 'out',
-			accepts: ['api-gateway', 'service', 'load-balancer', 'monolith', 'broker']
+			accepts: ['api-gateway', 'service', 'load-balancer', 'monolith', 'broker', 'cache']
 		}
 	],
-	component: LoadNode,
 	create: () => ({ label: 'Carga', rps: 100 })
 };

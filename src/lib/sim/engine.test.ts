@@ -463,3 +463,69 @@ describe('database scaling: single / replicas / sharded', () => {
 		expect(stat.s.level).toBe('crit');
 	});
 });
+
+describe('cache', () => {
+	const cache = (id: string, capacity: number, hitRatio: number, ttlSeconds = 0): ArchNode => ({
+		id,
+		type: 'cache',
+		position: at,
+		data: { kind: 'cache', label: id, capacity, hitRatio, ttlSeconds }
+	});
+
+	it('serves the hit fraction locally and forwards only misses downstream', () => {
+		const nodes = [load('g', 1000), cache('c', 100000, 0.8), database('d', 5000)];
+		const edges = [edge('g', 'c'), edge('c', 'd')];
+		const { nodes: stat } = computeSim(nodes, edges);
+
+		expect(stat.c.served).toBe(1000);
+		expect(stat.c.cache?.hits).toBeCloseTo(800, 5);
+		expect(stat.c.cache?.misses).toBeCloseTo(200, 5);
+		expect(stat.c.cache?.hitRatio).toBeCloseTo(0.8, 5);
+		// the backing only sees the misses → its offered load drops by the hit ratio
+		expect(stat.d.offered).toBeCloseTo(200, 5);
+		expect(stat.d.served).toBeCloseTo(200, 5);
+	});
+
+	it('saturates on its own capacity under high load', () => {
+		const nodes = [load('g', 1000), cache('c', 400, 0.8), database('d', 5000)];
+		const edges = [edge('g', 'c'), edge('c', 'd')];
+		const { nodes: stat } = computeSim(nodes, edges);
+
+		expect(stat.c.served).toBe(400);
+		expect(stat.c.dropped).toBe(600);
+		expect(stat.c.level).toBe('crit');
+		// only the misses of the served load reach the backing: 400 · (1 − 0.8)
+		expect(stat.d.offered).toBeCloseTo(80, 5);
+	});
+
+	it('shields hits when the backing saturates — only misses are throttled', () => {
+		const nodes = [load('g', 1000), cache('c', 100000, 0.8), database('d', 50)];
+		const edges = [edge('g', 'c'), edge('c', 'd')];
+		const { nodes: stat } = computeSim(nodes, edges);
+
+		// backing is overwhelmed by the 200 req/s of misses, serves only 50
+		expect(stat.d.offered).toBeCloseTo(200, 5);
+		expect(stat.d.served).toBe(50);
+		// hits (800) all pass; of the 200 misses only 50 complete → served ≈ 850
+		expect(stat.c.cache?.hits).toBeCloseTo(800, 5);
+		expect(stat.c.served).toBeCloseTo(850, 5);
+		expect(stat.c.blocked ?? 0).toBeCloseTo(150, 5);
+		expect(stat.c.level).toBe('crit');
+	});
+
+	it('modulates the effective hit ratio by warmth from the cache state', () => {
+		const nodes = [load('g', 1000), cache('c', 100000, 0.8, 30), database('d', 5000)];
+		const edges = [edge('g', 'c'), edge('c', 'd')];
+
+		// half-warm: effective hit ratio = 0.8 · 0.5 = 0.4
+		const warm = computeSim(nodes, edges, {}, {}, {}, { c: { warmth: 0.5 } }).nodes;
+		expect(warm.c.cache?.hitRatio).toBeCloseTo(0.4, 5);
+		expect(warm.d.offered).toBeCloseTo(600, 5);
+
+		// cold start (no state, ttl > 0): warmth 0 → no hits, everything forwarded
+		const cold = computeSim(nodes, edges).nodes;
+		expect(cold.c.cache?.warmth).toBe(0);
+		expect(cold.c.cache?.hits).toBe(0);
+		expect(cold.d.offered).toBeCloseTo(1000, 5);
+	});
+});
