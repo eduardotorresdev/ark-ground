@@ -71,6 +71,8 @@ class GraphStore {
 
 	/** Number of services reachable downstream of a gateway (expanding pools). */
 	serviceCount(gatewayId: string): number {
+		// Local traversal set, not reactive state — SvelteSet would be inappropriate.
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity
 		const visited = new Set<string>();
 		const stack = this.edges.filter((e) => e.source === gatewayId).map((e) => e.target);
 		let count = 0;
@@ -460,6 +462,8 @@ class GraphStore {
 		const gw = this.nodes.find((n) => n.id === gwId)!;
 
 		// Private databases of the selected services.
+		// Local collection set, not reactive state — SvelteSet would be inappropriate.
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity
 		const dbIds = new Set<string>();
 		for (const s of services)
 			for (const e of this.edges)

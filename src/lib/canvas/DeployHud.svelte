@@ -15,7 +15,9 @@
 	const totalDropped = $derived(
 		Object.values(sim.result.nodes).reduce((s, st) => s + st.dropped, 0)
 	);
-	const pctDropped = $derived(totalOffered > 0 ? Math.round((totalDropped / totalOffered) * 100) : 0);
+	const pctDropped = $derived(
+		totalOffered > 0 ? Math.round((totalDropped / totalOffered) * 100) : 0
+	);
 
 	const quanta = $derived(detectQuanta(graph.nodes, graph.edges));
 	const deployingIds = $derived(new Set(runs.map((r) => r.nodeId)));

@@ -19,7 +19,9 @@
 		</div>
 	</div>
 {:else}
-	<span class="mt-1.5 inline-block rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground tabular-nums">
+	<span
+		class="mt-1.5 inline-block rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground tabular-nums"
+	>
 		v{version}
 	</span>
 {/if}
