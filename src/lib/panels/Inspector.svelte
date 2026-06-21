@@ -15,11 +15,13 @@
 	import { sim } from '$lib/stores/sim.svelte';
 	import { getDef } from '$lib/registry';
 	import { DEFAULT_GATEWAY_WEIGHT } from '$lib/sim/engine';
+	import { effectiveDbCapacity } from '$lib/sim/database';
 	import { amplificationOf, isSyncKind } from '$lib/sim/syncqueue';
 	import type {
 		ArchData,
 		BrokerFullPolicy,
 		BrokerMode,
+		DbMode,
 		DeployStrategy,
 		LbAlgorithm
 	} from '$lib/registry/types';
@@ -91,6 +93,16 @@
 		const weights = { ...(node.data.weights ?? {}), [targetId]: Math.max(0, Math.round(value)) };
 		graph.updateData(node.id, { weights });
 	}
+	// Database scaling: effective (bottleneck) capacity, given the current mode.
+	// These guarded deriveds let the +/- closures read counts without re-narrowing.
+	const dbEffective = $derived(
+		node?.data.kind === 'database'
+			? Math.round(effectiveDbCapacity(node.data, node.data.capacity))
+			: 0
+	);
+	const dbReplicas = $derived(node?.data.kind === 'database' ? (node.data.replicaCount ?? 2) : 2);
+	const dbShards = $derived(node?.data.kind === 'database' ? (node.data.shardCount ?? 2) : 2);
+
 	const def = $derived(node ? getDef(node.data.kind) : null);
 	const isReplica = $derived(!!node?.parentId);
 	const replicaCount = $derived(
@@ -238,7 +250,138 @@
 					<option value="redis">redis</option>
 				</select>
 			</div>
-			{@render scale('f-cap', 'Capacidade (req/s)', node.data.capacity, 'capacity', 10000, 100)}
+			<div class="flex flex-col gap-1.5">
+				<Label for="f-dbmode">Modo</Label>
+				<select
+					id="f-dbmode"
+					class="h-9 rounded-md border bg-background px-2 text-sm"
+					value={node.data.mode ?? 'single'}
+					onchange={(e) => graph.updateData(node.id, { mode: e.currentTarget.value as DbMode })}
+				>
+					<option value="single">single (uma instância)</option>
+					<option value="replicas">primário + réplicas (escala leitura)</option>
+					<option value="sharded">shardado (escala leitura e escrita)</option>
+				</select>
+			</div>
+			{@render scale(
+				'f-cap',
+				'Capacidade por instância (req/s)',
+				node.data.capacity,
+				'capacity',
+				10000,
+				100
+			)}
+			{#if (node.data.mode ?? 'single') === 'replicas'}
+				<div class="flex flex-col gap-1.5">
+					<Label>Réplicas de leitura</Label>
+					<div class="flex items-center gap-2">
+						<Button
+							variant="outline"
+							size="icon"
+							class="size-8"
+							aria-label="Diminuir réplicas"
+							disabled={dbReplicas <= 1}
+							onclick={() =>
+								graph.updateData(node.id, { replicaCount: Math.max(1, dbReplicas - 1) })}
+						>
+							<Minus size={16} />
+						</Button>
+						<span class="min-w-8 text-center text-sm font-medium tabular-nums">
+							{dbReplicas}
+						</span>
+						<Button
+							variant="outline"
+							size="icon"
+							class="size-8"
+							aria-label="Aumentar réplicas"
+							onclick={() => graph.updateData(node.id, { replicaCount: dbReplicas + 1 })}
+						>
+							<Plus size={16} />
+						</Button>
+					</div>
+				</div>
+				<div class="flex flex-col gap-1.5">
+					<div class="flex items-center justify-between gap-2">
+						<Label for="f-readratio">Leituras</Label>
+						<span class="shrink-0 text-xs tabular-nums text-muted-foreground">
+							{Math.round((node.data.readRatio ?? 0.8) * 100)}% leitura · {Math.round(
+								(1 - (node.data.readRatio ?? 0.8)) * 100
+							)}% escrita
+						</span>
+					</div>
+					<input
+						id="f-readratio"
+						type="range"
+						min="0"
+						max="100"
+						step="1"
+						value={Math.round((node.data.readRatio ?? 0.8) * 100)}
+						class="w-full"
+						oninput={(e) =>
+							graph.updateData(node.id, { readRatio: num(e.currentTarget.value, 80) / 100 })}
+					/>
+				</div>
+				<p class="text-xs text-muted-foreground">
+					Leitura: {node.data.capacity} × {(node.data.replicaCount ?? 2) + 1} (primário + réplicas) =
+					{(node.data.capacity * ((node.data.replicaCount ?? 2) + 1)).toLocaleString('pt-BR')} req/s.
+					Escrita: {node.data.capacity.toLocaleString('pt-BR')} req/s (só primário). Capacidade efetiva
+					≈ {dbEffective.toLocaleString('pt-BR')} req/s. O lag de replicação cresce quando o primário
+					enche.
+				</p>
+			{:else if (node.data.mode ?? 'single') === 'sharded'}
+				<div class="flex flex-col gap-1.5">
+					<Label>Shards</Label>
+					<div class="flex items-center gap-2">
+						<Button
+							variant="outline"
+							size="icon"
+							class="size-8"
+							aria-label="Diminuir shards"
+							disabled={dbShards <= 1}
+							onclick={() => graph.updateData(node.id, { shardCount: Math.max(1, dbShards - 1) })}
+						>
+							<Minus size={16} />
+						</Button>
+						<span class="min-w-8 text-center text-sm font-medium tabular-nums">
+							{dbShards}
+						</span>
+						<Button
+							variant="outline"
+							size="icon"
+							class="size-8"
+							aria-label="Aumentar shards"
+							onclick={() => graph.updateData(node.id, { shardCount: dbShards + 1 })}
+						>
+							<Plus size={16} />
+						</Button>
+					</div>
+				</div>
+				<div class="flex flex-col gap-1.5">
+					<div class="flex items-center justify-between gap-2">
+						<Label for="f-skew">Skew (shard quente)</Label>
+						<span class="shrink-0 text-xs tabular-nums text-muted-foreground">
+							{Math.round((node.data.skew ?? 0) * 100)}%
+						</span>
+					</div>
+					<input
+						id="f-skew"
+						type="range"
+						min="0"
+						max="100"
+						step="1"
+						value={Math.round((node.data.skew ?? 0) * 100)}
+						class="w-full"
+						oninput={(e) =>
+							graph.updateData(node.id, { skew: num(e.currentTarget.value, 0) / 100 })}
+					/>
+				</div>
+				<p class="text-xs text-muted-foreground">
+					Total ≈ {node.data.capacity} × {node.data.shardCount ?? 2} =
+					{(node.data.capacity * (node.data.shardCount ?? 2)).toLocaleString('pt-BR')} req/s. O skew concentra
+					a carga num shard quente, derrubando a capacidade efetiva para ≈
+					{dbEffective.toLocaleString('pt-BR')} req/s enquanto os outros ficam ociosos.
+				</p>
+			{/if}
 			<label class="flex items-center gap-2 text-sm">
 				<input
 					type="checkbox"

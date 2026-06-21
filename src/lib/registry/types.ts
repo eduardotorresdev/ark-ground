@@ -56,12 +56,33 @@ export type ServiceData = {
 	version: number;
 };
 
+/**
+ * How a database scales horizontally.
+ * - `single`: one instance; `capacity` is the whole thing (legacy default).
+ * - `replicas`: primary + read replicas. Reads spread across the pool (primary
+ *   included), writes hit only the primary. Needs a read/write split (`readRatio`).
+ * - `sharded`: load partitioned by key across `shardCount` shards; capacity scales
+ *   for both reads and writes. `skew` concentrates load onto one hot shard.
+ */
+export type DbMode = 'single' | 'replicas' | 'sharded';
+
 export type DatabaseData = {
 	kind: 'database';
 	label: string;
 	engine: 'postgres' | 'mysql' | 'mongo' | 'redis';
 	persistent: boolean;
+	/** req/s PER INSTANCE (per replica / per shard / the single instance) */
 	capacity: number;
+	/** scaling mode; absent ⇒ 'single' (backward compatible) */
+	mode?: DbMode;
+	/** replicas mode: number of read replicas (excludes the primary), ≥ 1 */
+	replicaCount?: number;
+	/** replicas mode: fraction of load that is reads, 0..1 */
+	readRatio?: number;
+	/** sharded mode: number of shards, ≥ 1 */
+	shardCount?: number;
+	/** sharded mode: hot-shard skew intensity, 0 (uniform) .. 1 (all on one shard) */
+	skew?: number;
 };
 
 export type GatewayData = {

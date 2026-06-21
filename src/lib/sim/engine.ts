@@ -1,6 +1,7 @@
-import type { ArchNode, BrokerData } from '$lib/registry/types';
+import type { ArchNode, BrokerData, DatabaseData } from '$lib/registry/types';
 import type { Edge } from '@xyflow/svelte';
 import { deliver, type BrokerInputs, type BrokerRuntime, type BrokerStat } from './broker';
+import { dbDetail, effectiveDbCapacity, type DbStat } from './database';
 import {
 	amplificationOf,
 	isSyncKind,
@@ -35,6 +36,8 @@ export type NodeStat = {
 	blocked?: number;
 	/** synchronous callees only: in-flight queue depth + latency (the temporal queue) */
 	sync?: SyncStat;
+	/** database-only: per-replica/shard breakdown + read/write split (display only) */
+	db?: DbStat;
 };
 
 export type EdgeStat = {
@@ -69,7 +72,12 @@ export const LEVEL_STROKE: Record<Level, string> = {
 
 function capacityOf(n: ArchNode): number | null {
 	const d = n.data;
-	if (d.kind === 'service' || d.kind === 'database' || d.kind === 'api-gateway') return d.capacity;
+	// A database's `capacity` is per-instance; its bottleneck is the effective
+	// capacity, which already encodes the replica/shard scaling and read/write or
+	// hot-shard skew. Returning Ceff here makes the throttle, cascade gate and
+	// temporal queue all reflect the real bottleneck without further changes.
+	if (d.kind === 'database') return effectiveDbCapacity(d, d.capacity);
+	if (d.kind === 'service' || d.kind === 'api-gateway') return d.capacity;
 	if (d.kind === 'load-balancer') return d.capacity;
 	if (d.kind === 'monolith') return d.capacity;
 	return null;
@@ -311,6 +319,13 @@ export function computeSim(
 					: bucket(cap > 0 ? offered / cap : offered > 0 ? Infinity : 0),
 			cyclic: cyc
 		};
+
+		// Per-replica/shard breakdown (display only; the aggregate above already
+		// reflects the bottleneck via the effective capacity in `capacityOf`).
+		if (kind === 'database') {
+			const d = n.data as DatabaseData;
+			stat[id].db = dbDetail(d, offered, d.capacity * (capMult[id] ?? 1));
+		}
 	}
 
 	// --- Backward pass: synchronous backpressure + temporal queue ---

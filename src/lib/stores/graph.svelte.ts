@@ -429,13 +429,7 @@ class GraphStore {
 					id: did,
 					type: 'database',
 					position: { x: mono.position.x + COL * 2, y: mono.position.y + i * ROW },
-					data: {
-						kind: 'database',
-						label: `${m.label} db`,
-						engine: db.data.engine,
-						persistent: db.data.persistent,
-						capacity: db.data.capacity
-					}
+					data: { ...db.data, label: `${m.label} db` }
 				});
 				newEdges.push({ id: `e-${sid}-${did}`, source: sid, target: did, type: 'load' });
 			}

@@ -1,7 +1,7 @@
 import type { ArchNode } from '$lib/registry/types';
 import type { Edge } from '@xyflow/svelte';
 
-export const CURRENT_VERSION = 4;
+export const CURRENT_VERSION = 5;
 
 export type Snapshot = {
 	version: number;
@@ -73,6 +73,22 @@ export const MIGRATIONS: Record<number, (s: AnySnapshot) => AnySnapshot> = {
 				return { ...n, data: { ...n.data, version: n.data.version ?? 1 } };
 			}
 			return n;
+		}),
+		edges: s.edges ?? []
+	}),
+	// v4 -> v5: databases gain a scaling `mode` (replicas/sharding); `capacity`
+	// is reinterpreted as per-instance. Single-mode keeps the legacy behaviour.
+	4: (s) => ({
+		version: 5,
+		nodes: (s.nodes ?? []).map((n) => {
+			if (n.data?.kind !== 'database') return n;
+			const data = { ...n.data };
+			data.mode ??= 'single';
+			data.replicaCount ??= 2;
+			data.readRatio ??= 0.8;
+			data.shardCount ??= 2;
+			data.skew ??= 0;
+			return { ...n, data };
 		}),
 		edges: s.edges ?? []
 	})
