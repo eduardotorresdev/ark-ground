@@ -2,7 +2,7 @@ import type { ArchNode, BrokerData, CacheData, DatabaseData } from '$lib/registr
 import type { Edge } from '@xyflow/svelte';
 import { deliver, type BrokerInputs, type BrokerRuntime, type BrokerStat } from './broker';
 import { dbDetail, effectiveDbCapacity, type DbStat } from './database';
-import { initialWarmth, type CacheRuntime, type CacheStat } from './cache';
+import { initialWarmth, ttlRetention, type CacheRuntime, type CacheStat } from './cache';
 import {
 	amplificationOf,
 	isSyncKind,
@@ -308,7 +308,11 @@ export function computeSim(
 			const cap = d.capacity * (capMult[id] ?? 1);
 			const sv = Math.min(offered, cap);
 			const warmth = cacheState[id]?.warmth ?? initialWarmth(d.ttlSeconds);
-			const effHit = Math.max(0, Math.min(1, d.hitRatio)) * warmth;
+			// Effective hit ratio = configured ceiling · warmth (populated yet?) ·
+			// retention (how much survives TTL expiry at this load). A short TTL or a
+			// large working set keeps re-fetching from the backing even when warm.
+			const retention = ttlRetention(offered, d.ttlSeconds, d.workingSet);
+			const effHit = Math.max(0, Math.min(1, d.hitRatio)) * warmth * retention;
 			const hits = sv * effHit;
 			const misses = sv - hits;
 			served.set(id, sv);
@@ -325,7 +329,7 @@ export function computeSim(
 				dropped: Math.max(0, offered - sv),
 				level: bucket(util),
 				cyclic: cyc,
-				cache: { hits, misses, hitRatio: effHit, warmth }
+				cache: { hits, misses, hitRatio: effHit, warmth, ttlRetention: retention }
 			};
 			continue;
 		}

@@ -615,8 +615,22 @@
 			)}
 			{#if node.data.ttlSeconds > 0}
 				<p class="text-xs text-muted-foreground">
-					Com TTL &gt; 0 o cache começa frio e aquece com a carga (constante de tempo ~TTL),
-					modulando o hit ratio efetivo ao longo do tempo.
+					Com TTL &gt; 0 o cache começa frio e aquece com a carga (constante de tempo ~TTL). Além
+					disso, entradas expiram: parte dos acessos re-consulta o backing mesmo quente, corroendo o
+					hit ratio efetivo — quanto menor o TTL ou maior o working set, mais forte a erosão.
+				</p>
+				{@render scale(
+					'f-ws',
+					'Working set (chaves) · 0 = sem expiração',
+					node.data.workingSet,
+					'workingSet',
+					100000,
+					100
+				)}
+				<p class="text-xs text-muted-foreground">
+					Chaves quentes distintas. Comparadas às requisições por janela de TTL (carga × TTL),
+					definem quanto a expiração derruba o hit ratio: poucas chaves p/ muita carga ≈ sem perda;
+					muitas chaves ≈ quase tudo re-consulta a fonte.
 				</p>
 			{/if}
 			{#if cacheStat}
@@ -627,7 +641,11 @@
 						{Math.round(cacheStat.hits).toLocaleString('pt-BR')} hit/s · {Math.round(
 							cacheStat.misses
 						).toLocaleString('pt-BR')} miss/s · hit efetivo {Math.round(cacheStat.hitRatio * 100)}%
-						(warmth {Math.round(cacheStat.warmth * 100)}%)
+						(warmth {Math.round(cacheStat.warmth * 100)}%{node.data.kind === 'cache' &&
+						node.data.ttlSeconds > 0 &&
+						node.data.workingSet > 0
+							? ` · retenção TTL ${Math.round(cacheStat.ttlRetention * 100)}%`
+							: ''})
 					</p>
 				</div>
 			{/if}

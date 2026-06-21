@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { advanceWarmth, initialWarmth, sameCache } from './cache';
+import { advanceWarmth, initialWarmth, sameCache, ttlRetention } from './cache';
 
 describe('initialWarmth', () => {
 	it('is cold (0) when the cache has a TTL, warm (1) otherwise', () => {
@@ -26,6 +26,36 @@ describe('advanceWarmth', () => {
 	it('clamps the step so a long frame cannot overshoot', () => {
 		expect(advanceWarmth(1000, 10, { warmth: 0 }, 100).warmth).toBe(1);
 		expect(advanceWarmth(0, 10, { warmth: 1 }, 100).warmth).toBe(0);
+	});
+});
+
+describe('ttlRetention', () => {
+	it('is 1 (no erosion) when expiry is not modeled', () => {
+		expect(ttlRetention(1000, 0, 2000)).toBe(1); // ttl 0 = always warm
+		expect(ttlRetention(1000, 30, 0)).toBe(1); // workingSet 0 = expiry off
+		expect(ttlRetention(1000, 30, -5)).toBe(1);
+	});
+
+	it('follows (offered·ttl)/(offered·ttl + workingSet)', () => {
+		// 1000 rps · 10 s = 10000 reqs/window vs 2000 keys → 10000/12000
+		expect(ttlRetention(1000, 10, 2000)).toBeCloseTo(10000 / 12000, 6);
+	});
+
+	it('approaches 1 as load or TTL grows (each key re-hit before expiring)', () => {
+		expect(ttlRetention(1e9, 30, 2000)).toBeGreaterThan(0.999);
+		expect(ttlRetention(1000, 1e9, 2000)).toBeGreaterThan(0.999);
+	});
+
+	it('approaches 0 as the key space dwarfs the requests per window', () => {
+		expect(ttlRetention(10, 1, 1e9)).toBeLessThan(0.001);
+	});
+
+	it('eases as load rises for a fixed TTL and key space', () => {
+		expect(ttlRetention(100, 10, 2000)).toBeLessThan(ttlRetention(10000, 10, 2000));
+	});
+
+	it('treats undefined workingSet (legacy diagrams) as expiry off', () => {
+		expect(ttlRetention(1000, 30, undefined as unknown as number)).toBe(1);
 	});
 });
 
