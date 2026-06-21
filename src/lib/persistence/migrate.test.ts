@@ -76,9 +76,62 @@ describe('migrate v2 -> v3', () => {
 
 	it('makes replicas non-interactive', () => {
 		const out = migrate(v2);
-		const child = out.nodes[1] as { draggable?: boolean; selectable?: boolean; connectable?: boolean };
+		const child = out.nodes[1] as {
+			draggable?: boolean;
+			selectable?: boolean;
+			connectable?: boolean;
+		};
 		expect(child.draggable).toBe(false);
 		expect(child.selectable).toBe(false);
 		expect(child.connectable).toBe(false);
+	});
+});
+
+describe('migrate v4 -> v5', () => {
+	const v4 = {
+		version: 4,
+		nodes: [
+			{
+				id: 'database-1',
+				type: 'database',
+				position: { x: 0, y: 0 },
+				data: {
+					kind: 'database',
+					label: 'PG',
+					engine: 'postgres',
+					persistent: true,
+					capacity: 1000
+				}
+			},
+			{
+				id: 'service-1',
+				type: 'service',
+				position: { x: 0, y: 0 },
+				data: { kind: 'service', label: 'API', capacity: 500, version: 1 }
+			}
+		],
+		edges: []
+	};
+
+	it('backfills database scaling fields with single-mode defaults', () => {
+		const out = migrate(v4);
+		const db = out.nodes[0].data as {
+			mode: string;
+			replicaCount: number;
+			readRatio: number;
+			shardCount: number;
+			skew: number;
+		};
+		expect(out.version).toBe(CURRENT_VERSION);
+		expect(db.mode).toBe('single');
+		expect(db.replicaCount).toBe(2);
+		expect(db.readRatio).toBe(0.8);
+		expect(db.shardCount).toBe(2);
+		expect(db.skew).toBe(0);
+	});
+
+	it('leaves non-database nodes untouched', () => {
+		const out = migrate(v4);
+		expect(out.nodes[1].data).not.toHaveProperty('mode');
 	});
 });

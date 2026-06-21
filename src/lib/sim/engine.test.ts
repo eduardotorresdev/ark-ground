@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { computeSim, bucket } from './engine';
-import type { ArchNode } from '$lib/registry/types';
+import type { ArchNode, DatabaseData } from '$lib/registry/types';
 import type { Edge } from '@xyflow/svelte';
 
 const at = { x: 0, y: 0 };
@@ -18,11 +18,11 @@ const service = (id: string, capacity: number, parentId?: string): ArchNode => (
 	data: { kind: 'service', label: id, capacity, version: 1 },
 	...(parentId ? { parentId, extent: 'parent' as const } : {})
 });
-const database = (id: string, capacity: number): ArchNode => ({
+const database = (id: string, capacity: number, scaling?: Partial<DatabaseData>): ArchNode => ({
 	id,
 	type: 'database',
 	position: at,
-	data: { kind: 'database', label: id, engine: 'postgres', persistent: true, capacity }
+	data: { kind: 'database', label: id, engine: 'postgres', persistent: true, capacity, ...scaling }
 });
 const lb = (id: string, algorithm: 'round-robin' | 'weighted' | 'least-connections'): ArchNode => ({
 	id,
@@ -379,6 +379,88 @@ describe('multiple independent databases', () => {
 		expect(stat.s2.served).toBe(100);
 		expect(stat.s2.blocked ?? 0).toBe(0);
 		expect(stat.s2.level).not.toBe('crit');
+	});
+});
+
+describe('database scaling: single / replicas / sharded', () => {
+	it('single mode (or absent mode) keeps the legacy capacity', () => {
+		const nodes = [load('g', 4000), database('d', 1000)];
+		const { nodes: stat } = computeSim(nodes, [edge('g', 'd')]);
+		expect(stat.d.capacity).toBe(1000);
+		expect(stat.d.served).toBe(1000);
+		expect(stat.d.dropped).toBe(3000);
+		expect(stat.d.level).toBe('crit');
+		expect(stat.d.db?.mode).toBe('single');
+	});
+
+	it('replicas: pure reads scale capacity by (replicas + 1)', () => {
+		// readRatio 1 ⇒ read pool = primary + 3 replicas = 4 ⇒ Ceff = 4000.
+		const nodes = [
+			load('g', 2000),
+			database('d', 1000, { mode: 'replicas', replicaCount: 3, readRatio: 1 })
+		];
+		const { nodes: stat } = computeSim(nodes, [edge('g', 'd')]);
+		expect(stat.d.capacity).toBe(4000);
+		expect(stat.d.served).toBe(2000);
+		expect(stat.d.level).toBe('ok'); // 2000 / 4000 = 0.5
+		expect(stat.d.db?.reads?.capacity).toBe(4000);
+		expect(stat.d.db?.writes?.capacity).toBe(1000);
+	});
+
+	it('replicas: writes do not scale — the primary is the bottleneck', () => {
+		// readRatio 0.5, R=3 ⇒ Ceff = cap / max(0.5/4, 0.5) = 1000 / 0.5 = 2000.
+		const db = database('d', 1000, { mode: 'replicas', replicaCount: 3, readRatio: 0.5 });
+		const nodes = [load('g', 4000), db];
+		const { nodes: stat } = computeSim(nodes, [edge('g', 'd')]);
+		expect(stat.d.capacity).toBe(2000);
+		// 4000 offered ⇒ 2000 writes vs 1000 write capacity ⇒ saturated.
+		expect(stat.d.level).toBe('crit');
+		expect(stat.d.dropped).toBe(2000);
+		// replication lag appears once the primary's write path fills.
+		expect(stat.d.db?.replicationLagSeconds ?? 0).toBeGreaterThan(0);
+	});
+
+	it('sharded: capacity scales by shard count when load is uniform', () => {
+		const nodes = [
+			load('g', 2000),
+			database('d', 1000, { mode: 'sharded', shardCount: 4, skew: 0 })
+		];
+		const { nodes: stat } = computeSim(nodes, [edge('g', 'd')]);
+		expect(stat.d.capacity).toBe(4000);
+		expect(stat.d.served).toBe(2000);
+		expect(stat.d.level).toBe('ok'); // 2000 / 4000 = 0.5
+		expect(stat.d.db?.units).toHaveLength(4);
+		// uniform ⇒ no hot shard
+		expect(stat.d.db?.units.every((u) => !u.hot)).toBe(true);
+	});
+
+	it('sharded skew collapses effective capacity toward a single hot shard', () => {
+		// skew 1 ⇒ hotShare 1 ⇒ Ceff = cap = 1000, while cold shards sit idle.
+		const nodes = [
+			load('g', 3000),
+			database('d', 1000, { mode: 'sharded', shardCount: 4, skew: 1 })
+		];
+		const { nodes: stat } = computeSim(nodes, [edge('g', 'd')]);
+		expect(stat.d.capacity).toBe(1000);
+		expect(stat.d.level).toBe('crit');
+		const units = stat.d.db?.units ?? [];
+		expect(units[0].hot).toBe(true);
+		expect(units[0].level).toBe('crit'); // hot shard saturated
+		expect(bucket(units[1].util)).toBe('idle'); // cold shards idle
+	});
+
+	it('a replica-saturated database still gates its caller in cascade', () => {
+		// Write-bound database (readRatio 0) ⇒ Ceff = 500 ⇒ gates the service.
+		const nodes = [
+			load('g', 2000),
+			service('s', 5000),
+			database('d', 500, { mode: 'replicas', replicaCount: 4, readRatio: 0 })
+		];
+		const { nodes: stat } = computeSim(nodes, [edge('g', 's'), edge('s', 'd')]);
+		expect(stat.d.capacity).toBe(500);
+		expect(stat.d.served).toBe(500);
+		expect(stat.s.served).toBe(500); // gated by the saturated primary
+		expect(stat.s.level).toBe('crit');
 	});
 });
 

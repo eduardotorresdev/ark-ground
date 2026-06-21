@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vitest/config';
 import { playwright } from '@vitest/browser-playwright';
@@ -38,6 +39,17 @@ export default defineConfig({
 
 			{
 				extends: './vite.config.ts',
+				// Node tests that import the registry pull in `.svelte` node components,
+				// which import `@xyflow/svelte` (TS `.svelte` source the Svelte compiler
+				// mis-strips under rolldown, breaking the suite). These tests never render
+				// components, so alias the library to a harmless stub.
+				resolve: {
+					alias: {
+						'@xyflow/svelte': fileURLToPath(
+							new URL('./src/lib/test/xyflow-stub.ts', import.meta.url)
+						)
+					}
+				},
 				test: {
 					name: 'server',
 					environment: 'node',
