@@ -309,9 +309,9 @@ export function computeSim(
 			const sv = Math.min(offered, cap);
 			const warmth = cacheState[id]?.warmth ?? initialWarmth(d.ttlSeconds);
 			// Effective hit ratio = configured ceiling · warmth (populated yet?) ·
-			// retention (how much survives TTL expiry at this load). A short TTL or a
-			// large working set keeps re-fetching from the backing even when warm.
-			const retention = ttlRetention(offered, d.ttlSeconds, d.workingSet);
+			// retention (how much survives TTL expiry). A short TTL expires data
+			// sooner, so more requests re-fetch from the backing even when warm.
+			const retention = ttlRetention(d.ttlSeconds);
 			const effHit = Math.max(0, Math.min(1, d.hitRatio)) * warmth * retention;
 			const hits = sv * effHit;
 			const misses = sv - hits;

@@ -66,31 +66,26 @@ export function initialWarmth(ttlSeconds: number): number {
 }
 
 /**
+ * Reference time (seconds) for TTL-expiry erosion: a TTL equal to this keeps
+ * half of the would-be hits, the rest expire and re-query the backing.
+ */
+const TTL_REF_SECONDS = 5;
+
+/**
  * Steady-state hit-ratio retention from TTL expiry, in [0, 1].
  *
- * A per-entry TTL means a hot key isn't kept forever: each entry lives
- * `ttlSeconds` after it is fetched, then expires, and the next request for it
- * misses and re-queries the backing. So a finite TTL caps the achievable hit
- * ratio below the configured ceiling, and the cap depends on how often each key
- * is re-requested *within* its TTL window.
+ * A per-entry TTL means data isn't kept forever: once it expires, the next
+ * request re-queries the backing instead of hitting the cache. So a finite TTL
+ * caps the achievable hit ratio below the configured ceiling — and the longer
+ * the TTL, the longer data stays cached, the more requests are hits.
  *
- * Modeling the `workingSet` distinct hot keys as Poisson arrivals, the per-key
- * rate is `offered / workingSet`, and the classic TTL-cache result `rT/(1+rT)`
- * gives a retained-hit fraction of
- *     (offered · ttl) / (offered · ttl + workingSet).
- * `offered · ttl` is how many requests arrive per TTL window: when it dwarfs the
- * key count each key is re-hit before expiring (retention → 1); when keys
- * outnumber requests-per-window most accesses land on an expired entry and
- * re-fetch (retention → 0). Higher load or longer TTL ⇒ less erosion.
- *
- * `ttlSeconds <= 0` (always warm) or `workingSet <= 0` (expiry not modeled)
- * disable erosion and return 1.
+ * Kept deliberately simple (a smooth curve in the TTL alone, no extra knobs):
+ *     retention = ttl / (ttl + TTL_REF_SECONDS).
+ * `ttlSeconds <= 0` means "never expires" → retention 1 (no erosion).
  */
-export function ttlRetention(offered: number, ttlSeconds: number, workingSet: number): number {
+export function ttlRetention(ttlSeconds: number): number {
 	if (!(ttlSeconds > 0)) return 1;
-	if (!(workingSet > 0)) return 1;
-	const reqsPerWindow = Math.max(0, offered) * ttlSeconds;
-	return reqsPerWindow / (reqsPerWindow + workingSet);
+	return ttlSeconds / (ttlSeconds + TTL_REF_SECONDS);
 }
 
 function clamp01(v: number): number {

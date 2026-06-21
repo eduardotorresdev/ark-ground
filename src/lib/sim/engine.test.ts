@@ -465,17 +465,11 @@ describe('database scaling: single / replicas / sharded', () => {
 });
 
 describe('cache', () => {
-	const cache = (
-		id: string,
-		capacity: number,
-		hitRatio: number,
-		ttlSeconds = 0,
-		workingSet = 0
-	): ArchNode => ({
+	const cache = (id: string, capacity: number, hitRatio: number, ttlSeconds = 0): ArchNode => ({
 		id,
 		type: 'cache',
 		position: at,
-		data: { kind: 'cache', label: id, capacity, hitRatio, ttlSeconds, workingSet }
+		data: { kind: 'cache', label: id, capacity, hitRatio, ttlSeconds }
 	});
 
 	it('serves the hit fraction locally and forwards only misses downstream', () => {
@@ -523,10 +517,11 @@ describe('cache', () => {
 		const nodes = [load('g', 1000), cache('c', 100000, 0.8, 30), database('d', 5000)];
 		const edges = [edge('g', 'c'), edge('c', 'd')];
 
-		// half-warm: effective hit ratio = 0.8 · 0.5 = 0.4
+		// half-warm: effective hit = 0.8 · 0.5 · retention(30) = 0.8 · 0.5 · 30/35
+		const effHit = 0.8 * 0.5 * (30 / 35);
 		const warm = computeSim(nodes, edges, {}, {}, {}, { c: { warmth: 0.5 } }).nodes;
-		expect(warm.c.cache?.hitRatio).toBeCloseTo(0.4, 5);
-		expect(warm.d.offered).toBeCloseTo(600, 5);
+		expect(warm.c.cache?.hitRatio).toBeCloseTo(effHit, 5);
+		expect(warm.d.offered).toBeCloseTo(1000 * (1 - effHit), 5);
 
 		// cold start (no state, ttl > 0): warmth 0 → no hits, everything forwarded
 		const cold = computeSim(nodes, edges).nodes;
@@ -536,34 +531,34 @@ describe('cache', () => {
 	});
 
 	it('TTL expiry erodes the steady-state hit ratio even when fully warm', () => {
-		// fully warm cache, ttl 10s, 2000 hot keys, 1000 req/s.
-		// retention = (1000·10)/(1000·10 + 2000) = 0.8333
-		// effective hit = 0.8 · 1 · 0.8333 = 0.6667  →  misses 333 (not 200)
-		const nodes = [load('g', 1000), cache('c', 100000, 0.8, 10, 2000), database('d', 5000)];
+		// fully warm cache, ttl 10s → retention = 10/(10+5) = 0.6667
+		// effective hit = 0.8 · 1 · 0.6667 = 0.5333 → backing sees the rest re-fetched
+		const nodes = [load('g', 1000), cache('c', 100000, 0.8, 10), database('d', 5000)];
 		const edges = [edge('g', 'c'), edge('c', 'd')];
 		const warm = computeSim(nodes, edges, {}, {}, {}, { c: { warmth: 1 } }).nodes;
 
-		expect(warm.c.cache?.ttlRetention).toBeCloseTo(0.8333, 3);
-		expect(warm.c.cache?.hitRatio).toBeCloseTo(0.6667, 3);
-		// the backing keeps getting re-fetches from expiry: more than the 200 it
-		// would see with no expiry (workingSet 0).
-		expect(warm.d.offered).toBeCloseTo(333.33, 1);
+		expect(warm.c.cache?.ttlRetention).toBeCloseTo(10 / 15, 4);
+		expect(warm.c.cache?.hitRatio).toBeCloseTo(0.8 * (10 / 15), 4);
+		expect(warm.d.offered).toBeCloseTo(1000 * (1 - 0.8 * (10 / 15)), 1);
 	});
 
-	it('expiry erosion eases as load rises (each key re-hit before it expires)', () => {
-		const hot = (rps: number) =>
+	it('a longer TTL keeps data cached longer → more hits, fewer re-fetches', () => {
+		const backing = (ttl: number) =>
 			computeSim(
-				[load('g', rps), cache('c', 1e9, 0.8, 10, 2000), database('d', 1e9)],
+				[load('g', 1000), cache('c', 1e9, 0.8, ttl), database('d', 1e9)],
 				[edge('g', 'c'), edge('c', 'd')],
 				{},
 				{},
 				{},
 				{ c: { warmth: 1 } }
-			).nodes.c.cache!;
+			).nodes;
 
-		// low load: few requests per TTL window vs keys → heavy erosion
-		// high load: many requests per window → retention approaches 1 (→ hit ≈ 0.8)
-		expect(hot(200).ttlRetention).toBeLessThan(hot(20000).ttlRetention);
-		expect(hot(1_000_000).hitRatio).toBeCloseTo(0.8, 2);
+		const short = backing(5);
+		const long = backing(300);
+		// longer TTL → higher effective hit ratio → less load reaching the source
+		expect(long.c.cache!.hitRatio).toBeGreaterThan(short.c.cache!.hitRatio);
+		expect(long.d.offered).toBeLessThan(short.d.offered);
+		// a very long TTL approaches the configured ceiling (0.8)
+		expect(backing(1e7).c.cache!.hitRatio).toBeCloseTo(0.8, 2);
 	});
 });

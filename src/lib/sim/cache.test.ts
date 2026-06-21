@@ -30,32 +30,20 @@ describe('advanceWarmth', () => {
 });
 
 describe('ttlRetention', () => {
-	it('is 1 (no erosion) when expiry is not modeled', () => {
-		expect(ttlRetention(1000, 0, 2000)).toBe(1); // ttl 0 = always warm
-		expect(ttlRetention(1000, 30, 0)).toBe(1); // workingSet 0 = expiry off
-		expect(ttlRetention(1000, 30, -5)).toBe(1);
+	it('is 1 (no erosion) when TTL is 0 — never expires', () => {
+		expect(ttlRetention(0)).toBe(1);
+		expect(ttlRetention(-5)).toBe(1);
 	});
 
-	it('follows (offered·ttl)/(offered·ttl + workingSet)', () => {
-		// 1000 rps · 10 s = 10000 reqs/window vs 2000 keys → 10000/12000
-		expect(ttlRetention(1000, 10, 2000)).toBeCloseTo(10000 / 12000, 6);
+	it('follows ttl/(ttl + 5)', () => {
+		expect(ttlRetention(5)).toBeCloseTo(0.5, 6); // ttl == reference → half
+		expect(ttlRetention(10)).toBeCloseTo(10 / 15, 6);
+		expect(ttlRetention(30)).toBeCloseTo(30 / 35, 6);
 	});
 
-	it('approaches 1 as load or TTL grows (each key re-hit before expiring)', () => {
-		expect(ttlRetention(1e9, 30, 2000)).toBeGreaterThan(0.999);
-		expect(ttlRetention(1000, 1e9, 2000)).toBeGreaterThan(0.999);
-	});
-
-	it('approaches 0 as the key space dwarfs the requests per window', () => {
-		expect(ttlRetention(10, 1, 1e9)).toBeLessThan(0.001);
-	});
-
-	it('eases as load rises for a fixed TTL and key space', () => {
-		expect(ttlRetention(100, 10, 2000)).toBeLessThan(ttlRetention(10000, 10, 2000));
-	});
-
-	it('treats undefined workingSet (legacy diagrams) as expiry off', () => {
-		expect(ttlRetention(1000, 30, undefined as unknown as number)).toBe(1);
+	it('longer TTL retains more; approaches 1 as TTL grows', () => {
+		expect(ttlRetention(300)).toBeGreaterThan(ttlRetention(30));
+		expect(ttlRetention(1e7)).toBeGreaterThan(0.999);
 	});
 });
 

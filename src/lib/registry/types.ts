@@ -188,31 +188,21 @@ export type BrokerData = {
  *    and warms up as traffic populates it (time constant ~TTL), decaying back to
  *    cold when traffic subsides — so it can visibly go cold → warming → healthy.
  *  - a steady-state TTL *retention* in [0, 1]: a finite TTL expires entries, so
- *    even fully warm a fraction of accesses land on an expired key and re-query
- *    the backing. The erosion depends on load and the `workingSet` (see below):
- *    higher load or longer TTL ⇒ less erosion. This is what makes the backing
- *    keep getting continuous re-fetches under sustained traffic.
- * With `ttlSeconds = 0` warmth is pinned to 1 and expiry is off (constant hit
+ *    even fully warm a fraction of accesses re-query the backing. A longer TTL
+ *    keeps data cached longer, so fewer accesses expire — more hits.
+ * With `ttlSeconds = 0` warmth is pinned to 1 and nothing expires (constant hit
  * ratio). The warmth is integrated frame-by-frame in the sim store, like the
- * broker backlog; the retention is solved each tick from the offered rate.
+ * broker backlog; the retention is a simple function of the TTL.
  */
 export type CacheData = {
 	kind: 'cache';
 	label: string;
 	/** requests/second this cache can serve (hits + misses) before saturating */
 	capacity: number;
-	/** target hit ratio in [0, 1] (the warm, expiry-free ceiling fraction of hits) */
+	/** target hit ratio in [0, 1] (the warm, no-expiry ceiling fraction of hits) */
 	hitRatio: number;
 	/** entry time-to-live in seconds; drives the warmth ramp + expiry erosion. 0 = always warm */
 	ttlSeconds: number;
-	/**
-	 * Number of distinct hot keys (the working set). With a finite TTL this sets
-	 * how hard expiry erodes the steady-state hit ratio: the more keys there are
-	 * relative to the requests served per TTL window (`offered · ttl`), the more
-	 * accesses hit an expired entry and re-query the backing. 0 = don't model
-	 * expiry (the configured hit ratio is the constant ceiling).
-	 */
-	workingSet: number;
 };
 
 /** Discriminated union over `kind`. */

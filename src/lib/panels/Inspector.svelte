@@ -61,8 +61,6 @@
 	const brokerStat = $derived(
 		node?.data.kind === 'broker' ? sim.nodeStat(node.id)?.broker : undefined
 	);
-	// Cache: live hit/miss/warmth stats read from the sim.
-	const cacheStat = $derived(node?.data.kind === 'cache' ? sim.cacheStat(node.id) : undefined);
 	function consumerLabel(consumerId: string): string {
 		return graph.nodes.find((n) => n.id === consumerId)?.data.label ?? consumerId;
 	}
@@ -625,53 +623,23 @@
 					</span>
 				</div>
 				<p class="text-xs text-muted-foreground">
-					Fração da carga servida pelo cache (hit). O resto (miss) vai ao backing a jusante.
+					Dos pedidos que chegam, quantos encontram o dado já no cache em vez de ir buscar na fonte
+					original.
 				</p>
 			</div>
 			{@render scale(
 				'f-ttl',
-				'TTL (s) · 0 = sempre quente',
+				'TTL (s) · 0 = nunca expira',
 				node.data.ttlSeconds,
 				'ttlSeconds',
 				600,
 				5
 			)}
-			{#if node.data.ttlSeconds > 0}
-				<p class="text-xs text-muted-foreground">
-					Com TTL &gt; 0 o cache começa frio e aquece com a carga (constante de tempo ~TTL). Além
-					disso, entradas expiram: parte dos acessos re-consulta o backing mesmo quente, corroendo o
-					hit ratio efetivo — quanto menor o TTL ou maior o working set, mais forte a erosão.
-				</p>
-				{@render scale(
-					'f-ws',
-					'Working set (chaves) · 0 = sem expiração',
-					node.data.workingSet,
-					'workingSet',
-					100000,
-					100
-				)}
-				<p class="text-xs text-muted-foreground">
-					Chaves quentes distintas. Comparadas às requisições por janela de TTL (carga × TTL),
-					definem quanto a expiração derruba o hit ratio: poucas chaves p/ muita carga ≈ sem perda;
-					muitas chaves ≈ quase tudo re-consulta a fonte.
-				</p>
-			{/if}
-			{#if cacheStat}
-				<Separator />
-				<div class="flex flex-col gap-1.5">
-					<Label>Hit / miss</Label>
-					<p class="text-xs text-muted-foreground tabular-nums">
-						{Math.round(cacheStat.hits).toLocaleString('pt-BR')} hit/s · {Math.round(
-							cacheStat.misses
-						).toLocaleString('pt-BR')} miss/s · hit efetivo {Math.round(cacheStat.hitRatio * 100)}%
-						(warmth {Math.round(cacheStat.warmth * 100)}%{node.data.kind === 'cache' &&
-						node.data.ttlSeconds > 0 &&
-						node.data.workingSet > 0
-							? ` · retenção TTL ${Math.round(cacheStat.ttlRetention * 100)}%`
-							: ''})
-					</p>
-				</div>
-			{/if}
+			<p class="text-xs text-muted-foreground">
+				TTL (Tempo de Vida): por quanto tempo cada dado fica guardado no cache antes de expirar e
+				precisar ser buscado de novo na fonte. Quanto maior o TTL, mais pedidos são atendidos pelo
+				cache.
+			</p>
 		{/if}
 
 		{#if syncStat && syncStat.queue > 0.5}
