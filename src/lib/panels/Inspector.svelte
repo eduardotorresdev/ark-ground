@@ -336,11 +336,12 @@
 					/>
 				</div>
 				<p class="text-xs text-muted-foreground">
-					Leitura: {node.data.capacity} × {(node.data.replicaCount ?? 2) + 1} (primário + réplicas) =
-					{(node.data.capacity * ((node.data.replicaCount ?? 2) + 1)).toLocaleString('pt-BR')} req/s.
-					Escrita: {node.data.capacity.toLocaleString('pt-BR')} req/s (só primário). Capacidade efetiva
-					≈ {dbEffective.toLocaleString('pt-BR')} req/s. O lag de replicação cresce quando o primário
-					enche.
+					Com {node.data.replicaCount ?? 2} cópias, as leituras aguentam ~{(
+						node.data.capacity *
+						((node.data.replicaCount ?? 2) + 1)
+					).toLocaleString('pt-BR')} req/s, mas as gravações continuam em ~{node.data.capacity.toLocaleString(
+						'pt-BR'
+					)} req/s (só o principal). Se as gravações lotarem o principal, as cópias começam a ficar desatualizadas.
 				</p>
 			{:else if (node.data.mode ?? 'single') === 'sharded'}
 				<div class="flex flex-col gap-1.5">
@@ -372,7 +373,7 @@
 				</div>
 				<div class="flex flex-col gap-1.5">
 					<div class="flex items-center justify-between gap-2">
-						<Label for="f-skew">Skew (shard quente)</Label>
+						<Label for="f-skew">Pedaço quente</Label>
 						<span class="shrink-0 text-xs tabular-nums text-muted-foreground">
 							{Math.round((node.data.skew ?? 0) * 100)}%
 						</span>
@@ -390,10 +391,11 @@
 					/>
 				</div>
 				<p class="text-xs text-muted-foreground">
-					Total ≈ {node.data.capacity} × {node.data.shardCount ?? 2} =
-					{(node.data.capacity * (node.data.shardCount ?? 2)).toLocaleString('pt-BR')} req/s. O skew concentra
-					a carga num shard quente, derrubando a capacidade efetiva para ≈
-					{dbEffective.toLocaleString('pt-BR')} req/s enquanto os outros ficam ociosos.
+					Com {node.data.shardCount ?? 2} pedaços bem distribuídos, aguenta ~{(
+						node.data.capacity * (node.data.shardCount ?? 2)
+					).toLocaleString('pt-BR')} req/s. Mas se um pedaço ficar "quente" (acesso demais), ele vira
+					o gargalo: a capacidade real cai pra ~{dbEffective.toLocaleString('pt-BR')} req/s e os outros
+					ficam parados.
 				</p>
 			{/if}
 			<label class="flex items-center gap-2 text-sm">
