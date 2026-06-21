@@ -12,6 +12,11 @@ node_modules
 .DS_Store
 Thumbs.db
 
+# Non-bun lockfiles (this project uses bun)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
 # Env
 .env
 .env.*
