@@ -7,11 +7,14 @@
 	import { graph } from '$lib/stores/graph.svelte';
 	import { ui } from '$lib/stores/ui.svelte';
 	import { LEVEL_STROKE } from '$lib/sim/engine';
+	import { languageOption } from '$lib/registry/icons';
+	import BrandIcon from '$lib/components/BrandIcon.svelte';
 	import Metric from './Metric.svelte';
 	import DeployBadge from './DeployBadge.svelte';
 
 	let { id, data, selected }: NodeProps = $props();
 	const d = $derived(data as ServiceData);
+	const lang = $derived(languageOption(d.language));
 	const level = $derived(sim.level(id));
 	const isSelected = $derived(ui.selectedId === id);
 	// A replica living inside a pool: laid out by the pool, no own chrome.
@@ -54,8 +57,15 @@
 		</span>
 		<div class="leading-tight">
 			<div class="text-sm font-medium">{d.label}</div>
-			<div class="text-xs text-muted-foreground">
-				{d.capacity} rps{d.language ? ` · ${d.language}` : ''}
+			<div class="flex items-center gap-1 text-xs text-muted-foreground">
+				<span>{d.capacity} rps</span>
+				{#if lang}
+					<span>·</span>
+					<BrandIcon icon={lang.icon} size={12} />
+					<span>{lang.label}</span>
+				{:else if d.language}
+					<span>· {d.language}</span>
+				{/if}
 			</div>
 		</div>
 	</div>

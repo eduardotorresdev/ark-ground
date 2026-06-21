@@ -142,6 +142,7 @@ export type MonolithData = {
 	/** deployed version; one version covers every module */
 	version: number;
 	modules: Module[];
+	language?: string;
 };
 
 /** topic = fan-out (every consumer gets every quantum); work-queue = competing consumers. */

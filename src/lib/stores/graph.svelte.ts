@@ -402,6 +402,7 @@ class GraphStore {
 		);
 		const db = dbEdge ? this.nodes.find((n) => n.id === dbEdge.target) : null;
 
+		const monoLang = mono.data.language;
 		const COL = 240;
 		const ROW = 130;
 		const gwId = this.#id('api-gateway');
@@ -420,7 +421,13 @@ class GraphStore {
 				id: sid,
 				type: 'service',
 				position: { x: mono.position.x + COL, y: mono.position.y + i * ROW },
-				data: { kind: 'service', label: m.label, capacity: 500, version: 1 }
+				data: {
+					kind: 'service',
+					label: m.label,
+					capacity: 500,
+					version: 1,
+					...(monoLang ? { language: monoLang } : {})
+				}
 			});
 			newEdges.push({ id: `e-${gwId}-${sid}`, source: gwId, target: sid, type: 'load' });
 			if (db && db.data.kind === 'database') {
