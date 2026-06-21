@@ -21,19 +21,59 @@ export const netflix: PresetEntry = {
 		},
 		graph: snapshot(
 			[
-				node('load-1', 'load', { label: 'Tráfego', rps: 2400 }),
-				node('api-gateway-1', 'api-gateway', { label: 'API Gateway' }),
-				node('service-1', 'service', { label: 'Playback', language: 'java', capacity: 3000 }),
-				node('service-2', 'service', { label: 'Usuário', language: 'java', capacity: 3000 }),
-				node('service-3', 'service', {
-					label: 'Recomendações',
-					language: 'python',
-					capacity: 3000
-				}),
-				node('cache-1', 'cache', { label: 'Cache de perfil', hitRatio: 0.85 }),
-				node('database-1', 'database', { label: 'Playback DB', engine: 'mysql', capacity: 2000 }),
-				node('database-2', 'database', { label: 'Usuário DB', engine: 'postgres', capacity: 2000 }),
-				node('database-3', 'database', { label: 'Recs DB', engine: 'mongo', capacity: 2000 })
+				node('load-1', 'load', { label: 'Tráfego', rps: 2400 }, { position: { x: 0, y: 240 } }),
+				node(
+					'api-gateway-1',
+					'api-gateway',
+					{ label: 'API Gateway' },
+					{ position: { x: 220, y: 240 } }
+				),
+				node(
+					'service-1',
+					'service',
+					{ label: 'Playback', language: 'java', capacity: 3000 },
+					{ position: { x: 460, y: 40 } }
+				),
+				node(
+					'service-2',
+					'service',
+					{ label: 'Usuário', language: 'java', capacity: 3000 },
+					{ position: { x: 460, y: 440 } }
+				),
+				node(
+					'service-3',
+					'service',
+					{
+						label: 'Recomendações',
+						language: 'python',
+						capacity: 3000
+					},
+					{ position: { x: 460, y: 200 } }
+				),
+				node(
+					'cache-1',
+					'cache',
+					{ label: 'Cache de perfil', hitRatio: 0.85 },
+					{ position: { x: 740, y: 440 } }
+				),
+				node(
+					'database-1',
+					'database',
+					{ label: 'Playback DB', engine: 'mysql', capacity: 2000 },
+					{ position: { x: 740, y: 40 } }
+				),
+				node(
+					'database-2',
+					'database',
+					{ label: 'Usuário DB', engine: 'postgres', capacity: 2000 },
+					{ position: { x: 1020, y: 440 } }
+				),
+				node(
+					'database-3',
+					'database',
+					{ label: 'Recs DB', engine: 'mongo', capacity: 2000 },
+					{ position: { x: 740, y: 200 } }
+				)
 			],
 			[
 				edge('load-1', 'api-gateway-1'),

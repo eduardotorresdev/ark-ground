@@ -20,29 +20,60 @@ export const instagram: PresetEntry = {
 		},
 		graph: snapshot(
 			[
-				node('load-1', 'load', { label: 'Tráfego', rps: 1500 }),
-				node('load-balancer-1', 'load-balancer', { label: 'Balanceador' }),
-				node('pool-1', 'pool', { label: 'Django', capacity: 1500 }),
+				node('load-1', 'load', { label: 'Tráfego', rps: 1500 }, { position: { x: 0, y: 200 } }),
+				node(
+					'load-balancer-1',
+					'load-balancer',
+					{ label: 'Balanceador' },
+					{
+						position: { x: 220, y: 200 }
+					}
+				),
+				node(
+					'pool-1',
+					'pool',
+					{ label: 'Django', capacity: 1500 },
+					{
+						position: { x: 460, y: 120 }
+					}
+				),
 				replica('monolith-1', 'monolith', 'pool-1', { label: 'Django', language: 'python' }),
 				replica('monolith-2', 'monolith', 'pool-1', { label: 'Django', language: 'python' }),
-				node('cache-1', 'cache', { label: 'Cache', hitRatio: 0.85 }),
-				node('database-1', 'database', {
-					label: 'Postgres',
-					engine: 'postgres',
-					mode: 'replicas',
-					replicaCount: 3,
-					readRatio: 0.9,
-					capacity: 1500
-				}),
+				node(
+					'cache-1',
+					'cache',
+					{ label: 'Cache', hitRatio: 0.85 },
+					{
+						position: { x: 760, y: 80 }
+					}
+				),
+				node(
+					'database-1',
+					'database',
+					{
+						label: 'Postgres',
+						engine: 'postgres',
+						mode: 'replicas',
+						replicaCount: 3,
+						readRatio: 0.9,
+						capacity: 1500
+					},
+					{ position: { x: 1040, y: 60 } }
+				),
 				// Cassandra não existe na lista de engines do nó; modelado como store
 				// adicional usando o engine mongo como stand-in (a marca do card é o Instagram).
-				node('database-2', 'database', {
-					label: 'Cassandra (feed)',
-					engine: 'mongo',
-					mode: 'sharded',
-					shardCount: 4,
-					capacity: 1500
-				})
+				node(
+					'database-2',
+					'database',
+					{
+						label: 'Cassandra (feed)',
+						engine: 'mongo',
+						mode: 'sharded',
+						shardCount: 4,
+						capacity: 1500
+					},
+					{ position: { x: 760, y: 320 } }
+				)
 			],
 			[
 				edge('load-1', 'load-balancer-1'),

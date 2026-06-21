@@ -21,23 +21,63 @@ export const uber: PresetEntry = {
 		},
 		graph: snapshot(
 			[
-				node('load-1', 'load', { label: 'Tráfego', rps: 3000 }),
-				node('api-gateway-1', 'api-gateway', { label: 'API Gateway' }),
-				node('service-1', 'service', { label: 'Viagem', language: 'go', capacity: 3000 }),
-				node('service-2', 'service', { label: 'Motorista', language: 'go', capacity: 3000 }),
-				node('service-3', 'service', { label: 'Pagamentos', language: 'java', capacity: 3000 }),
-				node('broker-1', 'broker', { label: 'Eventos de viagem', mode: 'work-queue' }),
-				node('database-1', 'database', { label: 'Viagem DB', engine: 'postgres', capacity: 2000 }),
-				node('database-2', 'database', {
-					label: 'Motorista DB',
-					engine: 'postgres',
-					capacity: 2000
-				}),
-				node('database-3', 'database', {
-					label: 'Pagamentos DB',
-					engine: 'postgres',
-					capacity: 2000
-				})
+				node('load-1', 'load', { label: 'Tráfego', rps: 3000 }, { position: { x: 0, y: 360 } }),
+				node(
+					'api-gateway-1',
+					'api-gateway',
+					{ label: 'API Gateway' },
+					{ position: { x: 220, y: 360 } }
+				),
+				node(
+					'service-1',
+					'service',
+					{ label: 'Viagem', language: 'go', capacity: 3000 },
+					{ position: { x: 460, y: 40 } }
+				),
+				node(
+					'service-2',
+					'service',
+					{ label: 'Motorista', language: 'go', capacity: 3000 },
+					{ position: { x: 460, y: 360 } }
+				),
+				node(
+					'service-3',
+					'service',
+					{ label: 'Pagamentos', language: 'java', capacity: 3000 },
+					{ position: { x: 460, y: 680 } }
+				),
+				node(
+					'broker-1',
+					'broker',
+					{ label: 'Eventos de viagem', mode: 'work-queue' },
+					{ position: { x: 460, y: 230 } }
+				),
+				node(
+					'database-1',
+					'database',
+					{ label: 'Viagem DB', engine: 'postgres', capacity: 2000 },
+					{ position: { x: 740, y: 40 } }
+				),
+				node(
+					'database-2',
+					'database',
+					{
+						label: 'Motorista DB',
+						engine: 'postgres',
+						capacity: 2000
+					},
+					{ position: { x: 740, y: 360 } }
+				),
+				node(
+					'database-3',
+					'database',
+					{
+						label: 'Pagamentos DB',
+						engine: 'postgres',
+						capacity: 2000
+					},
+					{ position: { x: 740, y: 680 } }
+				)
 			],
 			[
 				edge('load-1', 'api-gateway-1'),
